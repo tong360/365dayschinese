@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>365 วัน เก่งภาษาจีน (Interactive Learning)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'Inter', 'sans-serif'],
+                        chinese: ['"Noto Sans SC"', 'sans-serif'],
+                    },
+                    colors: {
+                        line: '#06C755',
+                        primary: '#ef4444', 
+                        secondary: '#f59e0b',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #f8fafc;
+            touch-action: pan-y;
+            overscroll-behavior-y: none;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+        }
+        canvas {
+            touch-action: none;
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        .tab-locked { opacity: 0.5; cursor: not-allowed; filter: grayscale(100%); }
+        .tab-active { border-bottom: 4px solid #ef4444; color: #ef4444; font-weight: bold; }
+        .tab-completed { color: #10b981; }
+
+        .level-locked {
+            opacity: 0.6;
+            cursor: not-allowed;
+            position: relative;
+            background-color: #f1f5f9;
+        }
+        .level-locked::after {
+            content: "\f023";
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2rem;
+            color: rgba(0,0,0,0.4);
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- 1. Login Screen (Multi-user with PIN Security) -->
+    <div id="loginScreen" class="flex-grow flex items-center justify-center p-4 bg-gradient-to-br from-slate-100 to-slate-200">
+        <div class="glass-card w-full max-w-md rounded-3xl p-8 text-center space-y-6 shadow-2xl">
+            <div class="w-24 h-24 bg-gradient-to-br from-primary to-orange-400 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg border-4 border-white">
+                <i class="fas fa-book-reader text-5xl text-white"></i>
+            </div>
+            <h1 class="text-3xl font-bold text-slate-800">365 วัน <span class="text-primary">เก่งภาษาจีน</span></h1>
+            <p class="text-slate-500 text-sm">เข้าสู่ระบบเพื่อบันทึกความคืบหน้าส่วนตัว</p>
+            
+            <div class="pt-4 space-y-4">
+                <!-- Login Options -->
+                <div id="loginOptions" class="space-y-3">
+                    <!-- แก้ไขให้เรียกเช็คจำนวนบัญชีก่อน -->
+                    <button type="button" onclick="checkAndShowRegister()" class="w-full bg-primary hover:bg-red-600 text-white font-bold py-4 px-6 rounded-xl transition duration-300 flex items-center justify-center gap-3 shadow-lg shadow-red-200 active:scale-95">
+                        <i class="fas fa-user-plus text-xl"></i> ลงทะเบียนเรียนใหม่ (สร้างโปรไฟล์)
+                    </button>
+                    
+                    <div id="existingUsersSection" class="hidden pt-4 border-t border-slate-200">
+                        <p class="text-sm text-slate-600 font-bold mb-3 text-left flex justify-between items-center">
+                            เลือกบัญชีที่เคยเรียน:
+                            <span class="text-[10px] bg-slate-200 px-2 py-1 rounded-full text-slate-500">จำกัด 3 บัญชี</span>
+                        </p>
+                        <div id="recentUsersList" class="flex flex-col gap-2"></div>
+                    </div>
+                </div>
+
+                <!-- Auth Form (Hidden by default) -->
+                <div id="authForm" class="hidden text-left bg-slate-50 p-4 rounded-2xl border border-slate-200 animate-[fadeIn_0.3s_ease-out]">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-slate-700" id="authTitle">เข้าสู่ระบบ</h3>
+                        <button type="button" onclick="cancelLogin()" class="text-slate-400 hover:text-red-500 bg-white w-8 h-8 rounded-full shadow-sm flex items-center justify-center"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="space-y-3">
+                        <div id="nameInputGroup">
+                            <label class="block text-xs font-bold text-slate-500 mb-1">ชื่อผู้เรียน (แสดงผล)</label>
+                            <input type="text" id="usernameInput" placeholder="พิมพ์ชื่อของคุณ..." class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-line focus:ring-1 focus:ring-line transition">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1">รหัส PIN 4 หลัก (เพื่อความเป็นส่วนตัว)</label>
+                            <input type="password" id="pinInput" placeholder="****" maxlength="4" pattern="[0-9]*" inputmode="numeric" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-line focus:ring-1 focus:ring-line transition text-center tracking-[1em] font-bold text-xl">
+                        </div>
+                        <button type="button" id="submitAuthBtn" onclick="processAuth()" class="w-full bg-slate-800 text-white font-bold py-3 px-6 rounded-xl transition shadow-md mt-2 active:scale-95">
+                            ยืนยัน
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <p class="text-xs text-slate-400 mt-4"><i class="fas fa-lock"></i> ข้อมูลแยกกันชัดเจน ไม่สามารถแอบดูของคนอื่นได้</p>
+        </div>
+    </div>
+
+    <!-- 2. Main Dashboard Screen -->
+    <div id="mainScreen" class="hidden flex-grow flex-col">
+        <header class="bg-white px-4 py-3 flex items-center justify-between shadow-sm sticky top-0 z-20 overflow-x-auto">
+            <div class="flex items-center gap-3 shrink-0">
+                <div class="w-10 h-10 rounded-full bg-green-100 text-green-600 flex items-center justify-center font-bold text-lg border-2 border-line shrink-0" id="userAvatar">A</div>
+                <div>
+                    <h2 class="font-bold text-sm leading-tight text-slate-800" id="displayUserName">นักเรียน</h2>
+                    <p class="text-[11px] text-slate-500 whitespace-nowrap" id="studentCountDisplay"><i class="fas fa-circle text-green-500 animate-pulse text-[8px] mr-1"></i> จำนวนนักเรียนออนไลน์ 4979</p>
+                </div>
+            </div>
+            <div class="flex gap-2 shrink-0 ml-4">
+                <button type="button" onclick="showLeaderboard()" class="text-orange-500 bg-orange-50 px-3 py-2 rounded-xl text-xs font-semibold hover:bg-orange-100 transition shadow-sm active:scale-95 flex items-center">
+                    <i class="fas fa-trophy mr-1"></i> จัดอันดับ
+                </button>
+                <button type="button" onclick="showReviewScreen()" class="text-primary bg-red-50 px-3 py-2 rounded-xl text-xs font-semibold hover:bg-red-100 transition shadow-sm active:scale-95 flex items-center">
+                    <i class="fas fa-history mr-1"></i> ทบทวน
+                </button>
+                <button type="button" onclick="logout()" class="text-slate-500 bg-slate-100 p-2 rounded-xl text-xs hover:bg-slate-200 transition active:scale-95">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Level Selection -->
+        <div class="p-4 bg-slate-50">
+            <h3 class="font-bold text-slate-700 mb-3 text-lg flex items-center justify-between">
+                เลือกระดับ (HSK)
+                <span class="text-xs font-normal text-slate-500 bg-slate-200 px-2 py-1 rounded-md">ต้องผ่านทีละระดับ</span>
+            </h3>
+            <div class="grid grid-cols-3 gap-3">
+                <button type="button" onclick="selectLevel('hsk1')" id="btn-hsk1" class="bg-white border-2 border-primary rounded-xl p-3 text-center shadow-sm relative transition transform active:scale-95">
+                    <div class="font-bold text-primary">HSK 1</div>
+                    <div class="text-[10px] text-slate-500 mt-1 leading-tight">ทักทาย, ตัวเลข, ซื้อของ</div>
+                </button>
+                <button type="button" onclick="selectLevel('hsk2')" id="btn-hsk2" class="bg-white border-2 border-slate-200 rounded-xl p-3 text-center shadow-sm relative transition transform active:scale-95 level-locked">
+                    <div class="font-bold text-slate-700">HSK 2</div>
+                    <div class="text-[10px] text-slate-500 mt-1 leading-tight">กิจวัตร, ถามทาง, อากาศ</div>
+                </button>
+                <button type="button" onclick="selectLevel('hsk3')" id="btn-hsk3" class="bg-white border-2 border-slate-200 rounded-xl p-3 text-center shadow-sm relative transition transform active:scale-95 level-locked">
+                    <div class="font-bold text-slate-700">HSK 3</div>
+                    <div class="text-[10px] text-slate-500 mt-1 leading-tight">เรียน, ทำงาน, ท่องเที่ยว</div>
+                </button>
+            </div>
+        </div>
+
+        <!-- Learning Path -->
+        <div class="flex-grow p-4 bg-white rounded-t-3xl shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] relative z-10">
+            <div class="flex justify-between items-end mb-6">
+                <div>
+                    <h3 class="font-bold text-xl text-slate-800">บทเรียนวันนี้</h3>
+                    <p class="text-sm text-slate-500">วันที่ <span id="currentDayDisplay" class="font-bold text-primary text-lg">1</span> / 365</p>
+                </div>
+                <div class="text-right">
+                    <div class="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold shadow-sm">
+                        <i class="fas fa-fire text-orange-500"></i> วันละ 1 คำ
+                    </div>
+                </div>
+            </div>
+
+            <!-- Start Button Area -->
+            <div class="bg-gradient-to-r from-red-500 to-orange-400 rounded-2xl p-6 text-white text-center shadow-lg relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 opacity-20"><i class="fas fa-yin-yang text-8xl"></i></div>
+                <div class="relative z-10">
+                    <h4 class="text-4xl font-bold mb-2 font-chinese drop-shadow-md" id="previewWordCard">...</h4>
+                    <p class="text-red-100 text-sm mb-6 bg-black/10 inline-block px-3 py-1 rounded-full">ภารกิจ: ฟัง พูด อ่าน เขียน</p>
+                    <button type="button" onclick="startDailyLesson()" class="w-full bg-white text-primary font-bold py-4 px-6 rounded-xl shadow-md hover:bg-slate-50 transition transform active:scale-95 text-lg">
+                        <i class="fas fa-play mr-2"></i> เข้าเรียนต่อเลย!
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-6 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <h4 class="font-bold text-sm text-slate-700 mb-2"><i class="fas fa-info-circle text-blue-500"></i> กติกาการเรียน</h4>
+                <ul class="text-xs text-slate-600 space-y-2">
+                    <li>1. ต้องผ่านทักษะ อ่าน > ฟัง > พูด > เขียน ตามลำดับ ทักษะไหนไม่ผ่านไปต่อไม่ได้เด็ดขาด</li>
+                    <li>2. เรียนวันละ 1 คำ ระบบจะจำความคืบหน้าไว้ให้อัตโนมัติในบัญชีของคุณ</li>
+                    <li>3. เรียนจบแล้วแชร์ผลลัพธ์ไปให้ผู้ปกครองใน LINE ได้ทันที</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Learning Screen -->
+    <div id="learnScreen" class="hidden flex-grow flex-col bg-slate-50">
+        <header class="bg-white px-4 py-3 flex items-center justify-between shadow-sm sticky top-0 z-20">
+            <button type="button" onclick="backToMain()" class="text-slate-500 hover:text-slate-800 p-2 flex items-center gap-1 bg-slate-100 rounded-lg transition active:scale-95">
+                <i class="fas fa-chevron-left"></i> <span class="text-sm font-bold">ย้อนกลับ</span>
+            </button>
+            <h2 class="font-bold text-slate-800 text-lg">วันที่ <span id="learnDayNum"></span></h2>
+            <div class="w-20"></div> <!-- Spacer for centering -->
+        </header>
+
+        <!-- Progress Tabs -->
+        <div class="bg-white flex justify-between px-2 pt-2 shadow-sm sticky top-[56px] z-10 text-sm border-b border-slate-100">
+            <button type="button" id="tab-read" class="flex-1 pb-3 text-center tab-active"><i class="fas fa-book-open block mb-1"></i> อ่าน</button>
+            <button type="button" id="tab-listen" class="flex-1 pb-3 text-center tab-locked"><i class="fas fa-headphones block mb-1"></i> ฟัง</button>
+            <button type="button" id="tab-speak" class="flex-1 pb-3 text-center tab-locked"><i class="fas fa-microphone block mb-1"></i> พูด</button>
+            <button type="button" id="tab-write" class="flex-1 pb-3 text-center tab-locked"><i class="fas fa-pen block mb-1"></i> เขียน</button>
+        </div>
+
+        <!-- Content Area -->
+        <div class="flex-grow p-4 flex flex-col items-center justify-center max-w-lg mx-auto w-full" id="lessonContent">
+            <!-- Dynamic Content -->
+        </div>
+
+        <!-- Footer Action -->
+        <div class="bg-white p-4 shadow-[0_-5px_15px_rgba(0,0,0,0.05)] border-t border-slate-100 pb-safe">
+            <button type="button" id="btnNextSkill" onclick="nextSkill()" class="w-full bg-slate-200 text-slate-400 font-bold py-4 rounded-xl transition duration-300 pointer-events-none text-lg">
+                ผ่านด่าน (กำลังตรวจ...)
+            </button>
+        </div>
+    </div>
+
+    <!-- 4. Review Screen -->
+    <div id="reviewScreen" class="hidden flex-grow flex-col bg-slate-50">
+        <header class="bg-white px-4 py-4 flex items-center shadow-sm sticky top-0 z-20">
+            <button type="button" onclick="closeReviewScreen()" class="text-slate-500 hover:text-slate-800 p-2 mr-2 flex items-center gap-1 bg-slate-100 rounded-lg transition active:scale-95">
+                <i class="fas fa-chevron-left"></i> <span class="text-sm font-bold">ย้อนกลับ</span>
+            </button>
+            <h2 class="font-bold text-lg text-slate-800">ทบทวนคำศัพท์ <span id="reviewLevelBadge" class="text-primary text-sm ml-1"></span></h2>
+        </header>
+        <div class="p-4 flex-grow overflow-y-auto" id="reviewList">
+            <!-- Review items injected here -->
+        </div>
+    </div>
+
+    <!-- 5. Leaderboard Screen -->
+    <div id="leaderboardScreen" class="hidden flex-grow flex-col bg-slate-50">
+        <header class="bg-white px-4 py-4 flex items-center shadow-sm sticky top-0 z-20">
+            <button type="button" onclick="closeLeaderboard()" class="text-slate-500 hover:text-slate-800 p-2 mr-2 flex items-center gap-1 bg-slate-100 rounded-lg transition active:scale-95">
+                <i class="fas fa-chevron-left"></i> <span class="text-sm font-bold">ย้อนกลับ</span>
+            </button>
+            <h2 class="font-bold text-lg text-slate-800"><i class="fas fa-trophy text-orange-500 mr-1"></i> จัดอันดับนักเรียน</h2>
+        </header>
+        
+        <div class="bg-orange-500 text-white p-6 text-center shadow-inner relative overflow-hidden">
+            <div class="absolute -right-4 -top-4 opacity-20"><i class="fas fa-globe-asia text-8xl"></i></div>
+            <h3 class="text-xl font-bold relative z-10 mb-1">การแข่งขันในอุปกรณ์นี้</h3>
+            <p class="text-orange-100 text-sm relative z-10">สะสมคะแนนจากความก้าวหน้าและการทบทวน</p>
+        </div>
+
+        <div class="p-4 flex-grow overflow-y-auto" id="leaderboardList">
+            <!-- Leaderboard items injected here -->
+        </div>
+    </div>
+
+    <!-- Modals & Alerts -->
+    <div id="successModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-8 text-center max-w-sm w-full transform scale-95 transition-transform duration-300" id="successModalContent">
+            <div class="text-6xl mb-4 animate-bounce">🎉</div>
+            <h3 class="text-2xl font-bold text-slate-800 mb-2">เก่งมาก!</h3>
+            <p class="text-slate-600 mb-6">คุณเรียนรู้คำศัพท์ของวันนี้สำเร็จแล้ว</p>
+            <div class="space-y-3">
+                <button type="button" onclick="shareToLine()" class="w-full bg-line text-white font-bold py-4 rounded-xl hover:bg-green-600 transition shadow-lg shadow-green-200 flex items-center justify-center gap-2 active:scale-95">
+                    <i class="fab fa-line text-2xl"></i> แชร์ให้ผู้ปกครอง (LINE)
+                </button>
+                <button type="button" onclick="nextDay()" class="w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-200 transition active:scale-95">
+                    กลับหน้าหลัก เพื่อเรียนวันถัดไป
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="alertBox" class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl z-50 transition-all duration-300 opacity-0 translate-y-[-20px] pointer-events-none flex items-center gap-2 max-w-[90%] text-center">
+        <i class="fas fa-exclamation-circle text-yellow-400"></i>
+        <span id="alertMessage" class="text-sm font-medium">Message</span>
+    </div>
+
+    <script>
+        // --- 1. Vocabulary Database ---
+        const vocabDB = {
+            hsk1: [
+                { ch: "你好", pinyin: "nǐ hǎo", th: "สวัสดี" },
+                { ch: "我", pinyin: "wǒ", th: "ฉัน" },
+                { ch: "你", pinyin: "nǐ", th: "คุณ" },
+                { ch: "叫", pinyin: "jiào", th: "ชื่อว่า / เรียก" },
+                { ch: "什么", pinyin: "shén me", th: "อะไร" },
+                { ch: "名字", pinyin: "míng zi", th: "ชื่อ" },
+                { ch: "一", pinyin: "yī", th: "หนึ่ง" },
+                { ch: "二", pinyin: "èr", th: "สอง" },
+                { ch: "三", pinyin: "sān", th: "สาม" },
+                { ch: "四", pinyin: "sì", th: "สี่" },
+                { ch: "五", pinyin: "wǔ", th: "ห้า" },
+                { ch: "买", pinyin: "mǎi", th: "ซื้อ" },
+                { ch: "卖", pinyin: "mài", th: "ขาย" },
+                { ch: "多少", pinyin: "duō shǎo", th: "เท่าไหร่" },
+                { ch: "钱", pinyin: "qián", th: "เงิน" },
+                { ch: "块", pinyin: "kuài", th: "หยวน (ภาษาพูด)" },
+                { ch: "谢谢", pinyin: "xiè xie", th: "ขอบคุณ" },
+                { ch: "不客气", pinyin: "bú kè qì", th: "ไม่เป็นไร (ตอบรับ)" },
+                { ch: "再见", pinyin: "zài jiàn", th: "ลาก่อน" },
+                { ch: "水", pinyin: "shuǐ", th: "น้ำ" },
+                { ch: "茶", pinyin: "chá", th: "ชา" },
+                { ch: "吃", pinyin: "chī", th: "กิน" },
+                { ch: "喝", pinyin: "hē", th: "ดื่ม" },
+                { ch: "苹果", pinyin: "píng guǒ", th: "แอปเปิล" },
+                { ch: "饭", pinyin: "fàn", th: "ข้าว" },
+                { ch: "大", pinyin: "dà", th: "ใหญ่" },
+                { ch: "小", pinyin: "xiǎo", th: "เล็ก" },
+                { ch: "多", pinyin: "duō", th: "เยอะ" },
+                { ch: "少", pinyin: "shǎo", th: "น้อย" },
+                { ch: "人", pinyin: "rén", th: "คน" }
+            ],
+            hsk2: [
+                { ch: "起床", pinyin: "qǐ chuáng", th: "ตื่นนอน" },
+                { ch: "睡觉", pinyin: "shuì jiào", th: "นอนหลับ" },
+                { ch: "早上", pinyin: "zǎo shang", th: "ตอนเช้า" },
+                { ch: "晚上", pinyin: "wǎn shang", th: "ตอนเย็น/กลางคืน" },
+                { ch: "时间", pinyin: "shí jiān", th: "เวลา" },
+                { ch: "小时", pinyin: "xiǎo shí", th: "ชั่วโมง" },
+                { ch: "分钟", pinyin: "fēn zhōng", th: "นาที" },
+                { ch: "路", pinyin: "lù", th: "ถนน / ทาง" },
+                { ch: "走", pinyin: "zǒu", th: "เดิน / ไป" },
+                { ch: "跑步", pinyin: "pǎo bù", th: "วิ่ง" },
+                { ch: "左边", pinyin: "zuǒ biān", th: "ด้านซ้าย" },
+                { ch: "右边", pinyin: "yòu biān", th: "ด้านขวา" },
+                { ch: "旁边", pinyin: "páng biān", th: "ด้านข้าง" },
+                { ch: "前面", pinyin: "qián miàn", th: "ด้านหน้า" },
+                { ch: "后面", pinyin: "hòu miàn", th: "ด้านหลัง" },
+                { ch: "天气", pinyin: "tiān qì", th: "สภาพอากาศ" },
+                { ch: "晴天", pinyin: "qíng tiān", th: "วันฟ้าโปร่ง" },
+                { ch: "下雨", pinyin: "xià yǔ", th: "ฝนตก" },
+                { ch: "热", pinyin: "rè", th: "ร้อน" },
+                { ch: "冷", pinyin: "lěng", th: "หนาว" },
+                { ch: "穿", pinyin: "chuān", th: "สวมใส่" },
+                { ch: "衣服", pinyin: "yī fu", th: "เสื้อผ้า" },
+                { ch: "颜色", pinyin: "yán sè", th: "สี" },
+                { ch: "红", pinyin: "hóng", th: "สีแดง" },
+                { ch: "生病", pinyin: "shēng bìng", th: "ป่วย" },
+                { ch: "药", pinyin: "yào", th: "ยา" },
+                { ch: "医生", pinyin: "yī shēng", th: "หมอ" },
+                { ch: "医院", pinyin: "yī yuàn", th: "โรงพยาบาล" },
+                { ch: "身体", pinyin: "shēn tǐ", th: "ร่างกาย" },
+                { ch: "休息", pinyin: "xiū xi", th: "พักผ่อน" }
+            ],
+            hsk3: [
+                { ch: "复习", pinyin: "fù xí", th: "ทบทวน" },
+                { ch: "练习", pinyin: "liàn xí", th: "ฝึกฝน / แบบฝึกหัด" },
+                { ch: "成绩", pinyin: "chéng jì", th: "คะแนน / ผลการเรียน" },
+                { ch: "考试", pinyin: "kǎo shì", th: "สอบ" },
+                { ch: "词典", pinyin: "cí diǎn", th: "พจนานุกรม" },
+                { ch: "容易", pinyin: "róng yì", th: "ง่าย" },
+                { ch: "难", pinyin: "nán", th: "ยาก" },
+                { ch: "开会", pinyin: "kāi huì", th: "ประชุม" },
+                { ch: "同事", pinyin: "tóng shì", th: "เพื่อนร่วมงาน" },
+                { ch: "经理", pinyin: "jīng lǐ", th: "ผู้จัดการ" },
+                { ch: "办公室", pinyin: "bàn gōng shì", th: "สำนักงาน" },
+                { ch: "完成", pinyin: "wán chéng", th: "ทำเสร็จ / สำเร็จ" },
+                { ch: "护照", pinyin: "hù zhào", th: "พาสปอร์ต" },
+                { ch: "行李", pinyin: "xíng lǐ", th: "กระเป๋าเดินทาง" },
+                { ch: "机场", pinyin: "jī chǎng", th: "สนามบิน" },
+                { ch: "火车站", pinyin: "huǒ chē zhàn", th: "สถานีรถไฟ" },
+                { ch: "照片", pinyin: "zhào piàn", th: "รูปถ่าย" },
+                { ch: "照相机", pinyin: "zhào xiàng jī", th: "กล้องถ่ายรูป" },
+                { ch: "发现", pinyin: "fā xiàn", th: "ค้นพบ" },
+                { ch: "努力", pinyin: "nǔ lì", th: "ขยัน / พยายาม" },
+                { ch: "旅游", pinyin: "lǚ yóu", th: "ท่องเที่ยว" },
+                { ch: "城市", pinyin: "chéng shì", th: "เมือง" },
+                { ch: "文化", pinyin: "wén huà", th: "วัฒนธรรม" },
+                { ch: "世界", pinyin: "shì jiè", th: "โลก" },
+                { ch: "欢迎", pinyin: "huān yíng", th: "ยินดีต้อนรับ" },
+                { ch: "决定", pinyin: "jué dìng", th: "ตัดสินใจ" },
+                { ch: "解决", pinyin: "jiě jué", th: "แก้ไข(ปัญหา)" },
+                { ch: "希望", pinyin: "xī wàng", th: "ความหวัง / หวังว่า" },
+                { ch: "终于", pinyin: "zhōng yú", th: "ในที่สุด" },
+                { ch: "一定", pinyin: "yí dìng", th: "แน่นอน / ต้อง...ให้ได้" }
+            ]
+        };
+
+        // --- 2. State & Security Management ---
+        let currentUsername = '';
+        let appDB = {}; // Master DB
+        let appState = {}; // Current user data
+
+        // Initialize DB from LocalStorage
+        function initDB() {
+            try {
+                const raw = localStorage.getItem('chinese365_master_db');
+                if(raw) {
+                    appDB = JSON.parse(raw);
+                } else {
+                    appDB = { users: {} };
+                }
+            } catch (e) {
+                appDB = { users: {} };
+            }
+            renderUserList();
+            
+            // Auto-login session ป้องกันหน้าเว็บรีเฟรชตอนขออนุญาตเปิดไมค์
+            const activeUser = localStorage.getItem('chinese365_active_user');
+            if (activeUser && appDB.users[activeUser]) {
+                currentUsername = activeUser;
+                appState = appDB.users[activeUser].data;
+                showDashboard();
+                
+                // ถ้ารีเฟรชระหว่างเรียน ให้พาเข้าด่านต่อทันที แบบไร้รอยต่อ
+                if (appState.isInLesson) {
+                    startDailyLesson();
+                }
+            }
+            
+            setInterval(updateStudentCount, 3000);
+        }
+
+        function saveDB() {
+            if(currentUsername && appState) {
+                appDB.users[currentUsername].data = appState;
+            }
+            localStorage.setItem('chinese365_master_db', JSON.stringify(appDB));
+        }
+
+        function showAlert(msg) {
+            const box = document.getElementById('alertBox');
+            if(!box) return;
+            document.getElementById('alertMessage').innerText = msg;
+            box.classList.remove('opacity-0', 'translate-y-[-20px]', 'pointer-events-none');
+            setTimeout(() => {
+                box.classList.add('opacity-0', 'translate-y-[-20px]', 'pointer-events-none');
+            }, 3000);
+        }
+
+        function getTodayWord() {
+            if(!appState || !appState.level) return vocabDB.hsk1[0];
+            const list = vocabDB[appState.level];
+            const index = Math.min(appState.day - 1, list.length - 1); 
+            return list[index];
+        }
+
+        // --- 3. Authentication System ---
+        let authMode = ''; // 'new' or 'login'
+        let targetLoginUser = '';
+
+        function renderUserList() {
+            const listContainer = document.getElementById('recentUsersList');
+            const section = document.getElementById('existingUsersSection');
+            if(!listContainer || !section) return;
+            listContainer.innerHTML = '';
+            
+            const users = Object.keys(appDB.users);
+            if(users.length > 0) {
+                section.classList.remove('hidden');
+                users.forEach(name => {
+                    const u = appDB.users[name].data;
+                    const hskLabel = u.level.toUpperCase();
+                    listContainer.innerHTML += `
+                        <div class="flex items-center gap-2">
+                            <button type="button" onclick="showLoginForm('login', '${name}')" class="flex-grow w-full bg-white border border-slate-200 text-slate-700 p-4 rounded-xl font-bold shadow-sm hover:border-line flex justify-between items-center transition active:scale-95 text-left">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-lg">${name.charAt(0).toUpperCase()}</div>
+                                    <span class="truncate max-w-[100px]">${name}</span>
+                                </div>
+                                <span class="text-xs bg-slate-100 px-2 py-1 rounded-md text-slate-500 whitespace-nowrap">${hskLabel} | วันที่ ${u.day}</span>
+                            </button>
+                            <button type="button" onclick="deleteUser('${name}')" class="w-12 h-[74px] bg-slate-100 text-slate-400 rounded-xl hover:bg-red-100 hover:text-red-500 transition active:scale-95 flex items-center justify-center shadow-sm">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                });
+            } else {
+                section.classList.add('hidden');
+            }
+        }
+        
+        // เช็คจำนวนบัญชีสูงสุด 3 บัญชี
+        function checkAndShowRegister() {
+            const users = Object.keys(appDB.users);
+            if(users.length >= 3) {
+                showAlert("⚠️ จำกัดจำนวน 3 บัญชี กรุณากดไอคอนถังขยะเพื่อลบบัญชีเก่าก่อนสร้างใหม่ครับ");
+                return;
+            }
+            showLoginForm('new');
+        }
+        
+        // ลบบัญชีโดยต้องใช้รหัสผ่าน ป้องกันลบบัญชีคนอื่น
+        function deleteUser(name) {
+            const pin = prompt(`⚠️ ลบบัญชี "${name}"\nกรุณาใส่รหัส PIN 4 หลักของบัญชีนี้เพื่อยืนยัน:`);
+            if (pin === null) return; // กด Cancel
+            
+            if (appDB.users[name] && pin === appDB.users[name].pin) {
+                if(confirm(`คุณแน่ใจหรือไม่? ข้อมูลการเรียนของ "${name}" จะหายไปถาวร`)) {
+                    delete appDB.users[name];
+                    if (localStorage.getItem('chinese365_active_user') === name) {
+                        localStorage.removeItem('chinese365_active_user');
+                    }
+                    saveDB();
+                    renderUserList();
+                    showAlert("🗑️ ลบบัญชีสำเร็จ");
+                }
+            } else {
+                showAlert("❌ รหัส PIN ไม่ถูกต้อง! ไม่สามารถลบข้อมูลผู้อื่นได้");
+            }
+        }
+
+        function showLoginForm(mode, username = '') {
+            authMode = mode;
+            document.getElementById('loginOptions').classList.add('hidden');
+            document.getElementById('authForm').classList.remove('hidden');
+            document.getElementById('pinInput').value = '';
+            
+            if(mode === 'new') {
+                document.getElementById('authTitle').innerText = 'สร้างโปรไฟล์ใหม่';
+                document.getElementById('nameInputGroup').classList.remove('hidden');
+                document.getElementById('usernameInput').value = '';
+            } else {
+                targetLoginUser = username;
+                document.getElementById('authTitle').innerText = `เข้าสู่ระบบ: ${username}`;
+                document.getElementById('nameInputGroup').classList.add('hidden');
+            }
+        }
+
+        function cancelLogin() {
+            document.getElementById('loginOptions').classList.remove('hidden');
+            document.getElementById('authForm').classList.add('hidden');
+        }
+
+        function processAuth() {
+            const pin = document.getElementById('pinInput').value;
+            
+            if(!pin || pin.length !== 4) {
+                showAlert("กรุณาใส่รหัส PIN ให้ครบ 4 หลักครับ");
+                return;
+            }
+
+            if(authMode === 'new') {
+                const name = document.getElementById('usernameInput').value.trim();
+                if(!name) {
+                    showAlert("กรุณากรอกชื่อผู้เรียนด้วยครับ");
+                    return;
+                }
+                if(appDB.users[name]) {
+                    showAlert("ชื่อนี้มีผู้ใช้งานแล้ว กรุณาใช้ชื่ออื่น หรือเข้าสู่ระบบ");
+                    return;
+                }
+                // Create new user
+                appDB.users[name] = {
+                    pin: pin,
+                    data: {
+                        level: 'hsk1',
+                        unlockedLevels: ['hsk1'],
+                        day: 1,
+                        progress: { read: false, listen: false, speak: false, write: false },
+                        currentTab: 'read',
+                        isInLesson: false
+                    }
+                };
+                currentUsername = name;
+                appState = appDB.users[name].data;
+                localStorage.setItem('chinese365_active_user', currentUsername);
+                saveDB();
+                showDashboard();
+                
+            } else if (authMode === 'login') {
+                const storedPin = appDB.users[targetLoginUser].pin;
+                if(pin !== storedPin) {
+                    showAlert("❌ รหัส PIN ไม่ถูกต้อง ไม่สามารถเข้าดูข้อมูลได้!");
+                    return;
+                }
+                // Success Login
+                currentUsername = targetLoginUser;
+                appState = appDB.users[targetLoginUser].data;
+                localStorage.setItem('chinese365_active_user', currentUsername);
+                showDashboard();
+            }
+        }
+
+        function logout() {
+            currentUsername = '';
+            appState = {};
+            localStorage.removeItem('chinese365_active_user');
+            document.getElementById('mainScreen').classList.add('hidden');
+            document.getElementById('mainScreen').classList.remove('flex');
+            document.getElementById('loginScreen').classList.remove('hidden');
+            cancelLogin();
+            renderUserList();
+        }
+
+        // --- 4. Dashboard & Navigation ---
+        function updateStudentCount() {
+            const el = document.getElementById('studentCountDisplay');
+            if(el) {
+                let currentCount = parseInt(el.innerText.replace(/[^0-9]/g, '')) || 4979;
+                let change = Math.floor(Math.random() * 5) - 2; 
+                let newCount = currentCount + change;
+                if(newCount < 4900) newCount = 4900;
+                el.innerHTML = `<i class="fas fa-circle text-green-500 animate-pulse text-[8px] mr-1"></i> จำนวนนักเรียนออนไลน์ ${newCount}`;
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('mainScreen').classList.remove('hidden');
+            document.getElementById('mainScreen').classList.add('flex');
+            
+            document.getElementById('displayUserName').innerText = currentUsername;
+            document.getElementById('userAvatar').innerText = currentUsername.charAt(0).toUpperCase();
+            
+            updateDashboardUI();
+        }
+
+        function updateDashboardUI() {
+            document.getElementById('currentDayDisplay').innerText = appState.day;
+            const word = getTodayWord();
+            document.getElementById('previewWordCard').innerText = word.ch;
+
+            // Strict HSK Locking UI
+            ['hsk1', 'hsk2', 'hsk3'].forEach(lvl => {
+                const btn = document.getElementById(`btn-${lvl}`);
+                btn.classList.remove('border-primary', 'border-slate-200', 'level-locked', 'bg-red-50');
+                
+                if (appState.unlockedLevels.includes(lvl)) {
+                    if (appState.level === lvl) {
+                        btn.classList.add('border-primary', 'bg-red-50'); 
+                    } else {
+                        btn.classList.add('border-slate-200');
+                    }
+                } else {
+                    btn.classList.add('border-slate-200', 'level-locked');
+                }
+            });
+        }
+
+        function selectLevel(lvl) {
+            if (!appState.unlockedLevels.includes(lvl)) {
+                showAlert("🔒 ไม่สามารถข้ามระดับได้! ต้องเรียนด่านก่อนหน้าให้ครบ 30 วันก่อนครับ");
+                return;
+            }
+            appState.level = lvl;
+            saveDB();
+            updateDashboardUI();
+        }
+
+        // --- 5. Learning Core Logic ---
+        function startDailyLesson() {
+            appState.isInLesson = true;
+            saveDB(); // บันทึกสถานะว่ากำลังเรียนอยู่ ป้องกันรีเฟรชแล้วหลุดหน้า
+            
+            document.getElementById('mainScreen').classList.add('hidden');
+            document.getElementById('mainScreen').classList.remove('flex');
+            document.getElementById('learnScreen').classList.remove('hidden');
+            document.getElementById('learnScreen').classList.add('flex');
+            
+            document.getElementById('learnDayNum').innerText = appState.day;
+            
+            // Auto-resume logic strictly enforcing sequence
+            if (!appState.progress.read) appState.currentTab = 'read';
+            else if (!appState.progress.listen) appState.currentTab = 'listen';
+            else if (!appState.progress.speak) appState.currentTab = 'speak';
+            else if (!appState.progress.write) appState.currentTab = 'write';
+            else appState.currentTab = 'write'; // Default to last if all done somehow
+            
+            renderLessonTab();
+        }
+
+        function backToMain() {
+            appState.isInLesson = false;
+            saveDB();
+            
+            document.getElementById('learnScreen').classList.add('hidden');
+            document.getElementById('learnScreen').classList.remove('flex');
+            document.getElementById('mainScreen').classList.remove('hidden');
+            document.getElementById('mainScreen').classList.add('flex');
+            updateDashboardUI();
+        }
+
+        function renderLessonTab() {
+            const word = getTodayWord();
+            const container = document.getElementById('lessonContent');
+            const btnNext = document.getElementById('btnNextSkill');
+            container.innerHTML = ''; 
+
+            // Update Tabs UI (Strict flow)
+            ['read', 'listen', 'speak', 'write'].forEach((tab) => {
+                const el = document.getElementById(`tab-${tab}`);
+                el.className = 'flex-1 pb-3 text-center transition-colors'; 
+                
+                if (tab === appState.currentTab) {
+                    el.classList.add('tab-active');
+                } else if (appState.progress[tab]) {
+                    el.classList.add('tab-completed');
+                } else {
+                    el.classList.add('tab-locked');
+                }
+            });
+
+            // Reset Next Button
+            btnNext.className = "w-full bg-slate-200 text-slate-400 font-bold py-4 rounded-xl transition duration-300 pointer-events-none text-lg";
+            btnNext.innerText = "ด่านถัดไป (ถูกล็อก)";
+            btnNext.onclick = null;
+
+            if (appState.currentTab === 'read') {
+                container.innerHTML = `
+                    <div class="text-center w-full animate-[fadeIn_0.5s_ease-out]">
+                        <div class="text-slate-500 mb-4 font-semibold"><i class="fas fa-book-open"></i> ฝึกอ่านและจำความหมาย</div>
+                        <div class="glass-card p-10 rounded-3xl mb-8 border border-red-100 shadow-xl shadow-red-50 relative overflow-hidden">
+                            <div class="absolute top-0 right-0 w-32 h-32 bg-red-100 rounded-full blur-3xl opacity-50 -mr-10 -mt-10"></div>
+                            <h1 class="text-8xl font-chinese font-bold text-slate-800 mb-4 relative z-10">${word.ch}</h1>
+                            <p class="text-3xl text-primary font-medium mb-2 relative z-10">${word.pinyin}</p>
+                            <p class="text-xl text-slate-600 font-medium relative z-10">${word.th}</p>
+                        </div>
+                        <button type="button" onclick="playAudio('${word.ch}')" class="w-full bg-blue-50 text-blue-600 border-2 border-blue-200 py-4 rounded-xl font-bold hover:bg-blue-100 transition active:scale-95 shadow-sm text-lg flex items-center justify-center gap-2">
+                            <i class="fas fa-volume-up text-xl"></i> กดเพื่อฟังเสียงอ่าน
+                        </button>
+                    </div>
+                `;
+                
+                // Allow proceeding after short delay (simulating reading time)
+                setTimeout(() => {
+                    enableNextButton("จำได้แล้ว ไปด่านฟัง ->", () => completeSkill('read'));
+                }, 1500);
+
+            } else if (appState.currentTab === 'listen') {
+                container.innerHTML = `
+                    <div class="text-center w-full animate-[fadeIn_0.5s_ease-out]">
+                        <div class="text-slate-500 font-semibold mb-6"><i class="fas fa-headphones"></i> ฟังเสียงแล้วทายคำศัพท์</div>
+                        
+                        <button type="button" onclick="playAudio('${word.ch}')" class="w-32 h-32 rounded-full bg-gradient-to-br from-primary to-orange-500 text-white text-5xl shadow-[0_10px_25px_rgba(239,68,68,0.4)] hover:scale-105 transition transform flex items-center justify-center mx-auto mb-10 active:scale-95 border-4 border-white">
+                            <i class="fas fa-volume-up"></i>
+                        </button>
+
+                        <div class="grid grid-cols-2 gap-4 w-full">
+                            <button type="button" onclick="checkListen(false)" class="bg-white border-2 border-slate-200 p-5 rounded-2xl text-3xl font-chinese font-bold hover:border-primary hover:bg-red-50 transition shadow-sm text-slate-700">是</button>
+                            <button type="button" onclick="checkListen(true)" class="bg-white border-2 border-slate-200 p-5 rounded-2xl text-3xl font-chinese font-bold hover:border-primary hover:bg-red-50 transition shadow-sm text-slate-700">${word.ch}</button>
+                            <button type="button" onclick="checkListen(false)" class="bg-white border-2 border-slate-200 p-5 rounded-2xl text-3xl font-chinese font-bold hover:border-primary hover:bg-red-50 transition shadow-sm text-slate-700">好</button>
+                            <button type="button" onclick="checkListen(false)" class="bg-white border-2 border-slate-200 p-5 rounded-2xl text-3xl font-chinese font-bold hover:border-primary hover:bg-red-50 transition shadow-sm text-slate-700">大</button>
+                        </div>
+                    </div>
+                `;
+                
+            } else if (appState.currentTab === 'speak') {
+                container.innerHTML = `
+                    <div class="text-center w-full animate-[fadeIn_0.5s_ease-out]">
+                        <div class="text-slate-500 font-semibold mb-6"><i class="fas fa-microphone"></i> กดไมค์แล้วฝึกออกเสียง</div>
+                        <div class="mb-8">
+                            <h1 class="text-7xl font-chinese font-bold text-slate-800">${word.ch}</h1>
+                            <p class="text-primary text-2xl mt-2">${word.pinyin}</p>
+                        </div>
+                        
+                        <div class="py-4 relative">
+                            <div id="micPulse" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-red-200 rounded-full opacity-0 pointer-events-none"></div>
+                            
+                            <button type="button" id="micBtn" onclick="startSpeech(event)" class="relative z-10 w-24 h-24 rounded-full bg-slate-100 text-slate-400 text-4xl shadow-inner hover:bg-slate-200 transition border-4 border-white flex items-center justify-center mx-auto active:scale-95">
+                                <i class="fas fa-microphone"></i>
+                            </button>
+                            <p id="speechResult" class="text-sm mt-6 text-slate-500 h-6 font-medium bg-slate-100 inline-block px-4 py-1 rounded-full">กดปุ่มไมค์เพื่อเริ่มพูด</p>
+                        </div>
+
+                        <!-- Fallback Button for Mic Issues -->
+                        <div id="micFallback" class="hidden mt-8 pt-6 border-t border-slate-200 animate-[fadeIn_0.3s_ease-out]">
+                            <p class="text-xs text-slate-500 mb-3"><i class="fas fa-info-circle"></i> ไมค์มีปัญหา หรือ มือถือไม่รองรับ?</p>
+                            <button type="button" onclick="completeSkill('speak')" class="w-full bg-orange-100 text-orange-600 border border-orange-200 py-3 rounded-xl text-sm font-bold shadow-sm active:scale-95 transition">
+                                <i class="fas fa-forward mr-1"></i> ฝึกพูดเองแล้ว ข้ามด่านนี้ ->
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } else if (appState.currentTab === 'write') {
+                container.innerHTML = `
+                    <div class="text-center w-full flex flex-col items-center animate-[fadeIn_0.5s_ease-out]">
+                        <div class="text-slate-500 font-semibold text-sm mb-3"><i class="fas fa-pen"></i> ลากนิ้วเขียนตามรอย (บังคับเขียนให้เสร็จ)</div>
+                        <div class="bg-blue-50 text-blue-700 text-[11px] px-3 py-2 rounded-lg border border-blue-200 shadow-sm leading-relaxed mb-4 font-bold flex items-center gap-2">
+                            <i class="fas fa-hand-pointer text-lg"></i>
+                            <span>วิธีลาก: ลากจาก "บนลงล่าง" และ "ซ้ายไปขวา" ให้ครบถ้วน</span>
+                        </div>
+                        
+                        <div class="relative bg-white border-[3px] border-slate-300 rounded-2xl shadow-inner w-[280px] h-[280px] overflow-hidden" id="canvasContainer">
+                            <!-- Background Grid -->
+                            <div class="absolute inset-0 border-b border-r border-slate-200 border-dashed w-1/2 h-1/2 pointer-events-none"></div>
+                            <div class="absolute inset-y-0 right-0 border-b border-slate-200 border-dashed w-1/2 h-1/2 pointer-events-none"></div>
+                            <div class="absolute inset-x-0 bottom-0 border-r border-slate-200 border-dashed w-1/2 h-1/2 pointer-events-none"></div>
+                            
+                            <canvas id="writeCanvas" width="560" height="560" class="w-full h-full cursor-crosshair touch-none"></canvas>
+                        </div>
+                        
+                        <div class="flex gap-3 w-full max-w-[280px] mt-6">
+                            <button type="button" onclick="clearCanvas()" class="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm border border-slate-200 shadow-sm active:scale-95 transition"><i class="fas fa-eraser mr-1"></i> ลบ</button>
+                            <button type="button" onclick="attemptCompleteWrite()" class="flex-1 py-3 bg-primary text-white rounded-xl font-bold text-sm shadow-md active:scale-95 transition"><i class="fas fa-check-circle mr-1"></i> ส่งงาน</button>
+                        </div>
+                    </div>
+                `;
+                // Initialize canvas logic
+                setTimeout(initCanvas, 100); 
+            }
+        }
+
+        function enableNextButton(text, action) {
+            const btn = document.getElementById('btnNextSkill');
+            btn.innerText = text;
+            btn.className = "w-full bg-primary text-white font-bold py-4 rounded-xl transition duration-300 shadow-[0_5px_15px_rgba(239,68,68,0.4)] active:scale-95 text-lg pointer-events-auto cursor-pointer";
+            btn.onclick = action;
+        }
+
+        // --- 6. Interactions ---
+        function playAudio(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'zh-CN'; 
+                utterance.rate = 0.8; 
+                window.speechSynthesis.speak(utterance);
+            } else {
+                showAlert("อุปกรณ์ของคุณไม่รองรับระบบเสียง");
+            }
+        }
+
+        function checkListen(isCorrect) {
+            if (isCorrect) {
+                enableNextButton("เก่งมาก! ไปด่านพูด ->", () => completeSkill('listen'));
+                showAlert("✅ ถูกต้อง!");
+            } else {
+                showAlert("❌ ยังไม่ใช่ ลองฟังใหม่");
+            }
+        }
+
+        let isListening = false;
+
+        function startSpeech(e) {
+            if (e) e.preventDefault(); // ป้องกันเบราว์เซอร์ submit/reload หน้าเว็บ
+            if (isListening) return; 
+
+            const micBtn = document.getElementById('micBtn');
+            const micPulse = document.getElementById('micPulse');
+            const resText = document.getElementById('speechResult');
+            const fallback = document.getElementById('micFallback');
+            const word = getTodayWord().ch;
+
+            micBtn.classList.add('bg-red-500', 'text-white', 'border-red-200');
+            micBtn.classList.remove('bg-slate-100', 'text-slate-400');
+            micPulse.classList.add('animate-ping', 'opacity-100');
+            resText.innerText = "กำลังฟัง...";
+            resText.className = "text-sm mt-6 font-medium bg-red-50 text-red-600 inline-block px-4 py-1 rounded-full";
+            
+            // Show bypass option immediately
+            fallback.classList.remove('hidden');
+
+            try {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (SpeechRecognition) {
+                    const recognition = new SpeechRecognition();
+                    recognition.lang = 'zh-CN';
+                    recognition.interimResults = false;
+                    
+                    recognition.onstart = () => { isListening = true; };
+
+                    recognition.onresult = (event) => {
+                        const transcript = event.results[0][0].transcript.trim();
+                        resText.innerText = `คุณพูดว่า: ${transcript}`;
+                        resetMicVisuals(micBtn, micPulse);
+                        
+                        if (transcript.includes(word) || word.includes(transcript)) {
+                            resText.className = "text-sm mt-6 font-medium bg-green-50 text-green-600 inline-block px-4 py-1 rounded-full";
+                            enableNextButton("สำเนียงเป๊ะ! ไปด่านเขียน ->", () => completeSkill('speak'));
+                        } else {
+                            showAlert("❌ ออกเสียงยังไม่ชัด ลองใหม่ หรือกดปุ่มข้ามด้านล่าง");
+                        }
+                    };
+                    recognition.onerror = (e) => { 
+                        isListening = false;
+                        resetMicVisuals(micBtn, micPulse); 
+                        resText.innerText = "ไม่ได้ยินเสียง หรือไมค์มีปัญหา กดปุ่มข้ามได้เลย"; 
+                    };
+                    recognition.onend = () => {
+                        isListening = false;
+                        resetMicVisuals(micBtn, micPulse);
+                    };
+                    recognition.start(); 
+                } else {
+                    resetMicVisuals(micBtn, micPulse);
+                    resText.innerText = "เบราว์เซอร์ไม่รองรับ กรุณากดปุ่มข้าม";
+                }
+            } catch (e) {
+                isListening = false;
+                resetMicVisuals(micBtn, micPulse);
+                resText.innerText = "ระบบไมค์ขัดข้อง กดปุ่มข้ามด้านล่างเลยครับ";
+            }
+        }
+
+        function resetMicVisuals(btn, pulse) {
+            btn.classList.add('bg-slate-100', 'text-slate-400');
+            btn.classList.remove('bg-red-500', 'text-white', 'border-red-200');
+            pulse.classList.remove('animate-ping', 'opacity-100');
+        }
+
+        // --- 7. Canvas Writing Logic (Strict Check) ---
+        let canvas, ctx;
+        let isDrawing = false;
+        let totalDrawLength = 0; // ตัวแปรเก็บระยะทางการลากเส้น
+        let lastPos = null;
+
+        function initCanvas() {
+            canvas = document.getElementById('writeCanvas');
+            ctx = canvas.getContext('2d');
+            
+            // Scale by 2 for high DPI displays
+            ctx.scale(2, 2); 
+            drawGuideText();
+
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseout', stopDrawing);
+            canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+            canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+            canvas.addEventListener('touchend', stopDrawing);
+            canvas.addEventListener('touchcancel', stopDrawing);
+        }
+
+        function drawGuideText() {
+            const word = getTodayWord();
+            ctx.clearRect(0, 0, 280, 280);
+            
+            ctx.font = '200px "Noto Sans SC", sans-serif';
+            ctx.fillStyle = '#475569'; 
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(word.ch, 140, 150);
+            
+            ctx.strokeStyle = '#020617'; 
+            ctx.lineWidth = 20; 
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            totalDrawLength = 0; // รีเซ็ตระยะทางทุกครั้งที่เริ่มวาดใหม่หรือลบกระดาน
+        }
+
+        function clearCanvas() {
+            drawGuideText(); 
+        }
+
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = 280 / rect.width;   
+            const scaleY = 280 / rect.height;  
+            let clientX = e.clientX, clientY = e.clientY;
+            
+            if(e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            }
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function startDrawing(e) {
+            e.preventDefault();
+            isDrawing = true;
+            const pos = getPos(e);
+            lastPos = pos;
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        }
+        
+        function handleTouchStart(e) { if(e.touches.length === 1) { e.preventDefault(); startDrawing(e); } }
+        
+        function draw(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            
+            // คำนวณระยะทางและสะสม
+            if (lastPos) {
+                let distance = Math.hypot(pos.x - lastPos.x, pos.y - lastPos.y);
+                totalDrawLength += distance;
+            }
+            
+            lastPos = pos;
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        }
+        
+        function handleTouchMove(e) { if(e.touches.length === 1) { e.preventDefault(); draw(e); } }
+        
+        function stopDrawing(e) {
+            if(e) e.preventDefault();
+            isDrawing = false;
+            lastPos = null;
+            ctx.beginPath(); 
+        }
+
+        function attemptCompleteWrite() {
+            // เช็คว่าลากเส้นยาวพอหรือไม่ (ประมาณ 20px ขึ้นไปเป็นการเขียนแบบตั้งใจ)
+            if (totalDrawLength < 20) {
+                showAlert("🚨 กรุณาลากเส้นเขียนให้เสร็จสมบูรณ์ก่อนครับ (ยังเขียนไม่ครบ)");
+                return;
+            }
+            completeSkill('write');
+        }
+
+        // --- 8. Progression & Completion ---
+        function completeSkill(skillName) {
+            appState.progress[skillName] = true;
+            
+            // Advance to next tab securely
+            if (skillName === 'read') appState.currentTab = 'listen';
+            else if (skillName === 'listen') appState.currentTab = 'speak';
+            else if (skillName === 'speak') appState.currentTab = 'write';
+            else if (skillName === 'write') {
+                appState.isInLesson = false; // เคลียร์สถานะเมื่อเรียนจบ
+                saveDB();
+                showSuccessModal();
+                return;
+            }
+            
+            saveDB();
+            renderLessonTab();
+        }
+
+        function showSuccessModal() {
+            const modal = document.getElementById('successModal');
+            const content = document.getElementById('successModalContent');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 50);
+        }
+
+        function nextDay() {
+            document.getElementById('successModal').classList.add('hidden');
+            const currentVocabList = vocabDB[appState.level];
+            
+            // Progression Logic
+            if (appState.day >= currentVocabList.length) {
+                // Finished the level (e.g. 30 days)
+                if (appState.level === 'hsk1' && !appState.unlockedLevels.includes('hsk2')) {
+                    appState.unlockedLevels.push('hsk2');
+                    appState.level = 'hsk2';
+                    appState.day = 1;
+                    showAlert("🎉 ยินดีด้วย! คุณเรียนจบ HSK 1 และปลดล็อก HSK 2 แล้ว");
+                } else if (appState.level === 'hsk2' && !appState.unlockedLevels.includes('hsk3')) {
+                    appState.unlockedLevels.push('hsk3');
+                    appState.level = 'hsk3';
+                    appState.day = 1;
+                    showAlert("🎉 ยินดีด้วย! คุณเรียนจบ HSK 2 และปลดล็อก HSK 3 แล้ว");
+                } else if (appState.level === 'hsk3') {
+                    // Completed everything
+                    appState.day += 1;
+                    showAlert("🎓 สุดยอดมาก! คุณเรียนครบทุกด่านแล้ว กลับไปทบทวนได้เลย");
+                } else {
+                    appState.day += 1;
+                }
+            } else {
+                appState.day += 1; 
+            }
+
+            // Reset daily skills
+            appState.progress = { read: false, listen: false, speak: false, write: false };
+            appState.currentTab = 'read';
+            appState.isInLesson = false;
+            
+            saveDB(); 
+            backToMain();
+        }
+
+        function shareToLine() {
+            const word = getTodayWord();
+            const text = `🎉 [รายงานผลการเรียน - 365วันเก่งภาษาจีน]\n\nผู้เรียน: ${currentUsername}\n📚 วันนี้เรียนคำว่า: ${word.ch} (${word.pinyin})\n🇹🇭 แปลว่า: ${word.th}\n📈 ความคืบหน้า: ด่าน ${appState.level.toUpperCase()} วันที่ ${appState.day}\n\n"เรียนครบ ฟัง-พูด-อ่าน-เขียน! พรุ่งนี้มาลุยกันต่อ" 🚀`;
+            const url = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
+            window.open(url, '_blank');
+        }
+
+        // --- 9. Review Screen ---
+        function showReviewScreen() {
+            document.getElementById('mainScreen').classList.add('hidden');
+            document.getElementById('reviewScreen').classList.remove('hidden');
+            document.getElementById('reviewScreen').classList.add('flex');
+            
+            document.getElementById('reviewLevelBadge').innerText = `(ระดับ ${appState.level.toUpperCase()})`;
+            const list = document.getElementById('reviewList');
+            list.innerHTML = '';
+            
+            const currentVocabList = vocabDB[appState.level];
+            const maxReviewDay = appState.day - 1; 
+            
+            if (maxReviewDay <= 0) {
+                list.innerHTML = `
+                    <div class="text-center text-slate-500 mt-20 flex flex-col items-center">
+                        <i class="fas fa-folder-open text-5xl mb-4 text-slate-300"></i>
+                        <p>ยังไม่มีคำศัพท์ที่เรียนจบในระดับนี้<br>ต้องเรียนให้จบวันนี้ก่อนนะครับ</p>
+                    </div>`;
+                return;
+            }
+
+            for (let i = 0; i < maxReviewDay && i < currentVocabList.length; i++) {
+                const w = currentVocabList[i];
+                list.innerHTML += `
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-3 flex justify-between items-center">
+                        <div class="flex gap-4 items-center">
+                            <div class="w-14 h-14 bg-red-50 text-primary font-chinese text-3xl flex items-center justify-center rounded-2xl font-bold border border-red-100">
+                                ${w.ch}
+                            </div>
+                            <div>
+                                <div class="font-bold text-slate-700 text-lg">${w.th}</div>
+                                <div class="text-sm text-slate-500">${w.pinyin}</div>
+                            </div>
+                        </div>
+                        <button type="button" onclick="playAudio('${w.ch}')" class="w-12 h-12 rounded-full bg-slate-50 text-slate-500 border border-slate-200 flex items-center justify-center hover:bg-slate-100 transition active:scale-95 text-lg">
+                            <i class="fas fa-volume-up"></i>
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        function closeReviewScreen() {
+            document.getElementById('reviewScreen').classList.add('hidden');
+            document.getElementById('reviewScreen').classList.remove('flex');
+            document.getElementById('mainScreen').classList.remove('hidden');
+            document.getElementById('mainScreen').classList.add('flex');
+        }
+
+        // --- 10. Leaderboard (จัดอันดับ เฉพาะผู้ลงทะเบียนจริง) ---
+        function calculateScore(level, day) {
+            let lvlScore = level === 'hsk3' ? 3000 : (level === 'hsk2' ? 2000 : 1000);
+            return lvlScore + (day * 10);
+        }
+
+        function showLeaderboard() {
+            document.getElementById('mainScreen').classList.add('hidden');
+            document.getElementById('leaderboardScreen').classList.remove('hidden');
+            document.getElementById('leaderboardScreen').classList.add('flex');
+            
+            const list = document.getElementById('leaderboardList');
+            list.innerHTML = '';
+
+            // รวบรวมข้อมูลผู้ใช้งานที่มีการลงทะเบียนในเครื่องนี้เท่านั้น
+            let allUsers = [];
+            Object.keys(appDB.users).forEach(name => {
+                const u = appDB.users[name].data;
+                allUsers.push({
+                    name: name,
+                    level: u.level,
+                    day: u.day,
+                    score: calculateScore(u.level, u.day),
+                    isCurrentUser: name === currentUsername
+                });
+            });
+
+            // เรียงคะแนนจากมากไปน้อย
+            allUsers.sort((a, b) => b.score - a.score);
+
+            allUsers.forEach((user, index) => {
+                let rankIcon = `<div class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold flex items-center justify-center shrink-0">${index + 1}</div>`;
+                if (index === 0) rankIcon = `<div class="w-8 h-8 rounded-full bg-yellow-100 text-yellow-500 font-bold flex items-center justify-center text-xl shrink-0"><i class="fas fa-crown"></i></div>`;
+                else if (index === 1) rankIcon = `<div class="w-8 h-8 rounded-full bg-gray-200 text-gray-500 font-bold flex items-center justify-center text-lg shrink-0"><i class="fas fa-medal"></i></div>`;
+                else if (index === 2) rankIcon = `<div class="w-8 h-8 rounded-full bg-orange-100 text-orange-500 font-bold flex items-center justify-center text-lg shrink-0"><i class="fas fa-medal"></i></div>`;
+
+                let bgClass = user.isCurrentUser ? 'bg-red-50 border-primary shadow-sm' : 'bg-white border-slate-100 shadow-sm';
+                let nameClass = user.isCurrentUser ? 'text-primary font-bold' : 'text-slate-700 font-medium';
+                let tag = user.isCurrentUser ? '<span class="text-[9px] bg-primary text-white px-2 py-0.5 rounded-md ml-2 align-middle">คุณ</span>' : '';
+
+                list.innerHTML += `
+                    <div class="p-4 rounded-2xl border mb-3 flex justify-between items-center ${bgClass} transition">
+                        <div class="flex items-center gap-3">
+                            ${rankIcon}
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 text-slate-600 flex items-center justify-center font-bold text-lg border-2 border-white shadow-sm shrink-0">
+                                ${user.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <div class="${nameClass} text-base flex items-center">${user.name} ${tag}</div>
+                                <div class="text-[11px] text-slate-500">ระดับ: ${user.level.toUpperCase()} | วันที่: ${user.day}</div>
+                            </div>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <div class="font-bold text-orange-500 text-xl leading-none">${user.score}</div>
+                            <div class="text-[10px] text-slate-400">คะแนน</div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // ถ้ามีแค่ 1 บัญชี ให้แสดงข้อความชวนเล่น
+            if (allUsers.length < 2) {
+                list.innerHTML += `
+                    <div class="text-center text-slate-500 mt-6 p-5 bg-white rounded-2xl border border-slate-200 border-dashed text-sm">
+                        <i class="fas fa-user-friends text-3xl mb-3 text-slate-300 block"></i>
+                        <span class="font-bold text-slate-600">ยังไม่มีคู่แข่ง!</span><br>
+                        ชวนคนในครอบครัวมาสร้างบัญชีเพิ่ม<br>เพื่อแข่งขันประลองคำศัพท์กันสิ (สูงสุด 3 บัญชี)
+                    </div>
+                `;
+            }
+        }
+
+        function closeLeaderboard() {
+            document.getElementById('leaderboardScreen').classList.add('hidden');
+            document.getElementById('leaderboardScreen').classList.remove('flex');
+            document.getElementById('mainScreen').classList.remove('hidden');
+            document.getElementById('mainScreen').classList.add('flex');
+        }
+
+        // --- Init ---
+        window.onload = () => {
+            initDB();
+        };
+    </script>
+</body>
+</html>
