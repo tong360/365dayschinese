@@ -48,12 +48,12 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Expose Firebase API to window so Babel script can use it
         window.FirebaseAPI = {
-            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, signOut,
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, signOut, setPersistence, browserLocalPersistence,
             getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, onSnapshot
         };
         // Notify React that Firebase is ready
@@ -97,14 +97,15 @@
 
         const App = () => {
             const [isFirebaseReady, setIsFirebaseReady] = React.useState(!!window.FirebaseAPI);
-            const [appState, setAppState] = React.useState('loading'); // loading, setup, home, learn, quiz, result, leaderboard, progress
+            const [appState, setAppState] = React.useState('loading'); // loading, setup, home, learn, quiz, result, leaderboard, progress, confirmLogout
             const [user, setUser] = React.useState(null);
+            
             // Profile state to store user's display name and scores
             const [profile, setProfile] = React.useState({ 
                 displayName: '', 
                 scores: { beginner: 0, intermediate: 0, advanced: 0 }, 
                 totalScore: 0,
-                learningHistory: { beginner: 0, intermediate: 0, advanced: 0 } // Tracks how many words learned in each level
+                learningHistory: { beginner: 0, intermediate: 0, advanced: 0 } 
             });
             const [leaderboardData, setLeaderboardData] = React.useState([]);
             const [dbInstance, setDbInstance] = React.useState(null);
@@ -117,23 +118,69 @@
             const [quizQuestions, setQuizQuestions] = React.useState([]);
             const [setupName, setSetupName] = React.useState("");
             
-            // New state for online users simulation
+            // Online users simulation (10-99 users)
             const [onlineUsers, setOnlineUsers] = React.useState(15);
 
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'chinese-kids-app-v1';
+
+            // --- 1. ระบบจดจำสถานะหน้าเว็บเมื่อรีเฟรช (State Persistence) ---
+            React.useEffect(() => {
+                if (appState !== 'loading' && appState !== 'setup') {
+                    localStorage.setItem('chineseApp_savedState', JSON.stringify({
+                        appState, currentLevel, currentIndex, score, quizQuestions
+                    }));
+                }
+            }, [appState, currentLevel, currentIndex, score, quizQuestions]);
+
+            const restoreState = () => {
+                const saved = localStorage.getItem('chineseApp_savedState');
+                if (saved) {
+                    try {
+                        const parsed = JSON.parse(saved);
+                        if (parsed.appState && parsed.appState !== 'setup' && parsed.appState !== 'loading') {
+                            setCurrentLevel(parsed.currentLevel);
+                            setCurrentIndex(parsed.currentIndex);
+                            setScore(parsed.score);
+                            setQuizQuestions(parsed.quizQuestions || []);
+                            setAppState(parsed.appState);
+                            return;
+                        }
+                    } catch(e) { console.error("Restore state error", e); }
+                }
+                setAppState('home'); // หากไม่มีข้อมูลที่เซฟไว้ ให้กลับหน้าหลัก
+            };
+            // -----------------------------------------------------------
 
             React.useEffect(() => {
                 const handleReady = () => setIsFirebaseReady(true);
                 window.addEventListener('firebase-ready', handleReady);
                 
-                // Initialize random online users count
-                setOnlineUsers(Math.floor(Math.random() * 20) + 12);
+                // --- Mobile Audio Fix ---
+                // ปลดล็อกระบบเสียงในมือถือ (iOS/Safari) เมื่อแตะหน้าจอครั้งแรก
+                const unlockAudio = () => {
+                    if ('speechSynthesis' in window) {
+                        const u = new SpeechSynthesisUtterance('');
+                        window.speechSynthesis.speak(u);
+                    }
+                    document.removeEventListener('touchstart', unlockAudio);
+                    document.removeEventListener('click', unlockAudio);
+                };
+                document.addEventListener('touchstart', unlockAudio);
+                document.addEventListener('click', unlockAudio);
+                
+                // Initialize random online users count (10-99)
+                setOnlineUsers(Math.floor(Math.random() * 80) + 10);
                 const interval = setInterval(() => {
-                    setOnlineUsers(prev => Math.max(10, Math.min(99, prev + (Math.floor(Math.random() * 5) - 2))));
-                }, 8000);
+                    setOnlineUsers(prev => {
+                        const change = Math.floor(Math.random() * 7) - 3; // -3 to +3
+                        return Math.max(10, Math.min(99, prev + change));
+                    });
+                }, 5000);
                 
                 return () => {
                     window.removeEventListener('firebase-ready', handleReady);
+                    document.removeEventListener('touchstart', unlockAudio);
+                    document.removeEventListener('click', unlockAudio);
                     clearInterval(interval);
                 };
             }, []);
@@ -143,7 +190,7 @@
                 
                 const initApp = async () => {
                     try {
-                        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, getFirestore, doc, getDoc } = window.FirebaseAPI;
+                        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence, getFirestore, doc, getDoc } = window.FirebaseAPI;
                         
                         let firebaseConfig = { projectId: "demo-project" };
                         if (typeof __firebase_config !== 'undefined') {
@@ -154,6 +201,9 @@
                         const auth = getAuth(app);
                         const db = getFirestore(app);
                         setDbInstance(db);
+
+                        // บังคับให้ระบบจำการล็อกอินไว้ในเครื่อง (Local Persistence)
+                        await setPersistence(auth, browserLocalPersistence);
 
                         // Authenticate the user
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -166,43 +216,40 @@
                         if (!currentUser) throw new Error("Auth failed");
                         setUser(currentUser);
 
-                        // Fetch User Profile from Firestore. Path must have an even number of segments.
+                        // Fetch User Profile from Firestore
                         const profileRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'main');
                         const profileSnap = await getDoc(profileRef);
                         
                         if (profileSnap.exists()) {
-                            // Ensure learningHistory exists in the loaded profile
                             const data = profileSnap.data();
                             if(!data.learningHistory) {
                                 data.learningHistory = { beginner: 0, intermediate: 0, advanced: 0 };
                             }
                             setProfile(data);
-                            setAppState('home');
+                            restoreState(); // เรียกใช้ฟังก์ชันคืนค่าหน้าจอเดิม แทนที่จะกลับไปที่ 'home' เสมอ
                         } else {
                             // New user needs setup
                             setAppState('setup');
                         }
                     } catch (error) {
                         console.error("Firebase Init Error:", error);
-                        // Fallback to local offline mode if Firebase fails
                         setAppState('setup'); 
                     }
                 };
                 initApp();
             }, [isFirebaseReady]);
 
-            // Function to play text-to-speech for Chinese words
             const playAudio = (text) => {
                 if ('speechSynthesis' in window) {
-                    window.speechSynthesis.cancel(); // Clear queue to fix iOS/Safari bug and play immediately
+                    window.speechSynthesis.cancel(); // ล้างคิวเสียงเก่าทิ้ง เพื่อไม่ให้เสียงค้าง
                     const utterance = new SpeechSynthesisUtterance(text);
                     utterance.lang = 'zh-CN';
-                    utterance.rate = 0.85; 
+                    // ปรับความเร็วเสียงให้ช้าลงเล็กน้อยในมือถือ เพื่อให้เด็กๆ ฟังชัดขึ้น
+                    utterance.rate = window.innerWidth < 768 ? 0.75 : 0.85; 
                     
-                    // Try to load a specific Chinese voice for better cross-device compatibility
                     const voices = window.speechSynthesis.getVoices();
                     if (voices.length > 0) {
-                        const zhVoice = voices.find(v => v.lang.includes('zh') || v.lang.includes('ZH'));
+                        const zhVoice = voices.find(v => v.lang === 'zh-CN' || v.lang.includes('zh') || v.lang.includes('ZH'));
                         if (zhVoice) utterance.voice = zhVoice;
                     }
                     
@@ -210,7 +257,6 @@
                 }
             };
 
-            // Function to save profile data to Firestore
             const saveProfile = async (newProfile) => {
                 setProfile(newProfile); // Update state optimistically
                 if (!user || !dbInstance) return;
@@ -233,7 +279,6 @@
                 }
             };
 
-            // Function to fetch leaderboard data
             const fetchLeaderboard = async () => {
                 if (!dbInstance) return;
                 setAppState('leaderboard');
@@ -242,41 +287,30 @@
                     const lbCol = collection(dbInstance, 'artifacts', appId, 'public', 'data', 'leaderboard');
                     const snapshot = await getDocs(lbCol);
                     
-                    // Add Mock Data for challenge
+                    // ข้อมูลจำลองเพื่อกระตุ้นการแข่งขัน (คะแนนเต็มรวม 3 ด่านคือ 15 คะแนน)
                     const mockData = [
-                        { id: 'mock1', displayName: 'หลงเกอ 🐉', totalScore: 85 },
-                        { id: 'mock2', displayName: 'น้องเหมยลี่ 🌸', totalScore: 62 },
-                        { id: 'mock3', displayName: 'อาตี๋น้อย 👦', totalScore: 45 },
-                        { id: 'mock4', displayName: 'แพนด้าอ้วน 🐼', totalScore: 30 },
-                        { id: 'mock5', displayName: 'เสี่ยวหง 🍎', totalScore: 15 }
+                        { id: 'mock1', displayName: 'เซียนภาษาจีน 🐉', totalScore: 15 },
+                        { id: 'mock2', displayName: 'น้องเหมยลี่ 🌸', totalScore: 14 },
+                        { id: 'mock3', displayName: 'อาตี๋น้อย 👦', totalScore: 12 },
+                        { id: 'mock4', displayName: 'แพนด้าอ้วน 🐼', totalScore: 9 },
+                        { id: 'mock5', displayName: 'เสี่ยวหง 🍎', totalScore: 5 }
                     ];
                     
                     const list = [...mockData];
                     snapshot.forEach(doc => {
-                        // Avoid duplication if ID matches
                         if (!list.find(item => item.id === doc.id)) {
                             list.push({ id: doc.id, ...doc.data() });
                         }
                     });
-                    // Sort locally by total score in descending order
+                    
                     list.sort((a, b) => b.totalScore - a.totalScore);
-                    setLeaderboardData(list.slice(0, 50)); // Display top 50
+                    setLeaderboardData(list.slice(0, 50));
                 } catch (error) {
                     console.error("Fetch leaderboard error:", error);
                 }
             };
             
-            // Logout Function
-            const handleLogout = async () => {
-                try {
-                    const { getAuth, signOut } = window.FirebaseAPI;
-                    const auth = getAuth();
-                    await signOut(auth);
-                    window.location.reload(); // Reload to clear memory and re-authenticate as new user
-                } catch (error) {
-                    console.error("Logout error:", error);
-                }
-            };
+            // นำฟังก์ชัน handleLogout ออก เพื่อป้องกันการเปลี่ยนผู้เล่นตามที่ร้องขอ
 
             const handleSetupSubmit = (e) => {
                 e.preventDefault();
@@ -293,7 +327,6 @@
                 setAppState('learn');
             };
 
-            // Update learning progress when navigating through flashcards
             const updateLearningProgress = (level, index) => {
                 const currentLearned = profile.learningHistory[level] || 0;
                 if (index >= currentLearned) {
@@ -304,11 +337,9 @@
 
             const startQuiz = (level) => {
                 const words = VOCAB_DATA[level].words;
-                // Shuffle words and pick 5 for the quiz
                 const shuffled = [...words].sort(() => 0.5 - Math.random());
                 const selected = shuffled.slice(0, 5); 
                 
-                // Generate wrong options for each question
                 const questions = selected.map(word => {
                     const otherWords = words.filter(w => w.ch !== word.ch);
                     const wrongOptions = [...otherWords].sort(() => 0.5 - Math.random()).slice(0, 3).map(w => w.th);
@@ -332,7 +363,6 @@
                 if (currentIndex < quizQuestions.length - 1) {
                     setCurrentIndex(currentIndex + 1);
                 } else {
-                    // Finish quiz, update scores if higher than previous best
                     const finalScore = isCorrect ? score + 1 : score;
                     const prevBest = profile.scores[currentLevel] || 0;
                     
@@ -361,7 +391,12 @@
                         <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border-t-8 border-yellow-400 text-center transform transition-all hover:scale-105">
                             <h1 className="text-5xl mb-4">👋</h1>
                             <h2 className="text-3xl font-bold text-gray-800 mb-2">ยินดีต้อนรับ!</h2>
-                            <p className="text-gray-600 mb-6 text-lg">มาตั้งชื่อเล่นสำหรับแข่งขันกันเถอะ</p>
+                            <p className="text-gray-600 mb-6 text-md">
+                                มาตั้งชื่อเล่นสำหรับแข่งขันกันเถอะ<br/>
+                                <span className="text-sm text-blue-500 bg-blue-50 px-3 py-1 rounded-full mt-2 inline-block">
+                                    <i className="fas fa-save"></i> ระบบจะจำชื่อนี้ไว้ในเครื่องอัตโนมัติ
+                                </span>
+                            </p>
                             <form onSubmit={handleSetupSubmit} className="flex flex-col gap-4">
                                 <input 
                                     type="text" 
@@ -381,9 +416,10 @@
                 );
             }
 
+            // นำหน้าจอ appState === 'confirmLogout' ออก เพื่อป้องกันการเปลี่ยนผู้เล่น
+
             const renderHome = () => (
                 <div className="flex flex-col items-center justify-center min-h-screen p-4 py-10">
-                    {/* Header bar with Profile & Score */}
                     <div className="w-full max-w-4xl flex justify-between items-center bg-white p-4 rounded-3xl shadow-md mb-8 flex-wrap gap-4">
                         <div className="flex items-center gap-3">
                             <div className="w-12 h-12 bg-orange-100 text-orange-500 rounded-full flex justify-center items-center text-2xl font-bold border-2 border-orange-200">
@@ -392,9 +428,9 @@
                             <div>
                                 <h3 className="font-bold text-gray-800">{profile.displayName}</h3>
                                 <div className="flex items-center gap-2 text-xs mt-1">
-                                    <span className="flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-full font-medium">
+                                    <span className="flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-full font-medium border border-green-100">
                                         <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                                        ออนไลน์ {onlineUsers} คน
+                                        เพื่อนกำลังออนไลน์ {onlineUsers} คน
                                     </span>
                                 </div>
                             </div>
@@ -414,11 +450,7 @@
                                 className="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl shadow transition flex items-center gap-2 font-medium">
                                 <i className="fas fa-trophy"></i> <span className="hidden sm:inline">จัดอันดับ</span>
                             </button>
-                            <button 
-                                onClick={handleLogout}
-                                className="bg-red-50 hover:bg-red-100 text-red-500 p-3 rounded-xl border border-red-200 shadow-sm transition flex items-center gap-2 font-medium">
-                                <i className="fas fa-sign-out-alt"></i> <span className="hidden sm:inline">ออก</span>
-                            </button>
+                            {/* นำปุ่ม เปลี่ยนผู้เล่น ออกจากหน้าจอหลัก */}
                         </div>
                     </div>
 
@@ -431,7 +463,6 @@
                         </p>
                     </div>
 
-                    {/* Lesson Cards */}
                     <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-6">
                         {Object.entries(VOCAB_DATA).map(([key, data]) => {
                             const maxScore = profile.scores[key] || 0;
@@ -468,10 +499,7 @@
                                             </span>
                                         </div>
                                         <button 
-                                            onClick={() => {
-                                                updateLearningProgress(key, 0);
-                                                startLearning(key);
-                                            }}
+                                            onClick={() => { updateLearningProgress(key, 0); startLearning(key); }}
                                             className="w-full py-3 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2 text-lg">
                                             <i className="fas fa-book-open"></i> เรียนรู้คำศัพท์
                                         </button>
@@ -500,7 +528,7 @@
                         <div className="w-12"></div>
                     </div>
 
-                    <div className="bg-white w-full rounded-3xl shadow-xl p-8 mb-6">
+                    <div className="bg-white w-full rounded-3xl shadow-xl p-8 mb-6 border-t-8 border-green-400">
                         <div className="text-center mb-6">
                             <h2 className="text-xl font-bold text-gray-600">สถิติของ {profile.displayName}</h2>
                             <p className="text-gray-500">มาดูกันว่าหนูเรียนไปถึงไหนแล้ว!</p>
@@ -551,18 +579,18 @@
                     <div className="bg-white w-full rounded-3xl shadow-xl overflow-hidden flex flex-col max-h-[70vh]">
                         <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-6 text-white text-center">
                             <p className="opacity-80 text-sm mb-1">สุดยอดนักเรียนภาษาจีน</p>
-                            <h2 className="text-2xl font-bold">ใครทำคะแนนได้เยอะที่สุด?</h2>
+                            <h2 className="text-2xl font-bold">ใครทำคะแนนรวมได้ 15 คะแนนบ้าง?</h2>
                         </div>
                         
                         <div className="overflow-y-auto custom-scrollbar p-2 flex-grow">
                             {leaderboardData.length === 0 ? (
                                 <div className="p-10 text-center text-gray-500">
                                     <i className="fas fa-ghost w-12 h-12 mx-auto mb-2 opacity-50 text-4xl"></i>
-                                    <p>ยังไม่มีข้อมูลกระดานผู้นำ มาเป็นคนแรกกันเถอะ!</p>
+                                    <p>กำลังโหลดข้อมูลผู้เล่น...</p>
                                 </div>
                             ) : (
                                 leaderboardData.map((entry, idx) => (
-                                    <div key={entry.id} className={`flex items-center justify-between p-4 mb-2 rounded-2xl ${idx === 0 ? 'bg-yellow-50 border border-yellow-200' : idx === 1 ? 'bg-gray-50 border border-gray-200' : idx === 2 ? 'bg-orange-50 border border-orange-100' : 'bg-white hover:bg-gray-50'}`}>
+                                    <div key={entry.id} className={`flex items-center justify-between p-4 mb-2 rounded-2xl ${idx === 0 ? 'bg-yellow-50 border border-yellow-200 shadow-sm' : idx === 1 ? 'bg-gray-50 border border-gray-200' : idx === 2 ? 'bg-orange-50 border border-orange-100' : 'bg-white hover:bg-gray-50'}`}>
                                         <div className="flex items-center gap-4">
                                             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shadow-sm
                                                 ${idx === 0 ? 'bg-yellow-400 text-yellow-900' : idx === 1 ? 'bg-gray-300 text-gray-800' : idx === 2 ? 'bg-orange-300 text-orange-900' : 'bg-blue-100 text-blue-800'}
@@ -570,11 +598,11 @@
                                                 {idx + 1}
                                             </div>
                                             <span className={`font-bold ${idx < 3 ? 'text-lg' : 'text-md'} ${entry.id === user?.uid ? 'text-blue-600' : 'text-gray-700'}`}>
-                                                {entry.displayName} {entry.id === user?.uid && "(หนูเอง)"}
+                                                {entry.displayName} {entry.id === user?.uid && <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full ml-1">(หนูเอง)</span>}
                                             </span>
                                         </div>
                                         <div className="font-black text-xl text-yellow-600 flex items-center gap-1">
-                                            {entry.totalScore} <i className="fas fa-star text-yellow-400"></i>
+                                            {entry.totalScore} <span className="text-sm font-normal text-gray-400">/ 15</span> <i className="fas fa-star text-yellow-400 ml-1"></i>
                                         </div>
                                     </div>
                                 ))
@@ -637,8 +665,9 @@
 
                             <button 
                                 onClick={(e) => { e.stopPropagation(); playAudio(word.ch); }}
-                                className="p-6 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-lg transition transform hover:scale-110 flex flex-col items-center pulse-soft">
+                                className="p-6 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-lg transition transform hover:scale-110 flex flex-col items-center pulse-soft relative">
                                 <i className="fas fa-volume-up text-3xl"></i>
+                                <span className="absolute -top-2 -right-2 bg-yellow-400 text-xs font-bold px-2 py-1 rounded-full text-yellow-900 shadow">ฟังเสียง</span>
                             </button>
 
                             <button 
@@ -759,6 +788,7 @@
                     {appState === 'result' && renderResult()}
                     {appState === 'leaderboard' && renderLeaderboard()}
                     {appState === 'progress' && renderProgress()}
+                    {/* ลบการแสดงผลหน้า Logout ออก */}
                 </div>
             );
         };
