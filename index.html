@@ -48,12 +48,12 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Expose Firebase API to window so Babel script can use it
         window.FirebaseAPI = {
-            initializeApp, getAuth, signInAnonymously, signInWithCustomToken,
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, signOut,
             getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, onSnapshot
         };
         // Notify React that Firebase is ready
@@ -116,13 +116,26 @@
             const [isFlipped, setIsFlipped] = React.useState(false);
             const [quizQuestions, setQuizQuestions] = React.useState([]);
             const [setupName, setSetupName] = React.useState("");
+            
+            // New state for online users simulation
+            const [onlineUsers, setOnlineUsers] = React.useState(15);
 
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'chinese-kids-app-v1';
 
             React.useEffect(() => {
                 const handleReady = () => setIsFirebaseReady(true);
                 window.addEventListener('firebase-ready', handleReady);
-                return () => window.removeEventListener('firebase-ready', handleReady);
+                
+                // Initialize random online users count
+                setOnlineUsers(Math.floor(Math.random() * 20) + 12);
+                const interval = setInterval(() => {
+                    setOnlineUsers(prev => Math.max(10, Math.min(99, prev + (Math.floor(Math.random() * 5) - 2))));
+                }, 8000);
+                
+                return () => {
+                    window.removeEventListener('firebase-ready', handleReady);
+                    clearInterval(interval);
+                };
             }, []);
 
             React.useEffect(() => {
@@ -181,9 +194,18 @@
             // Function to play text-to-speech for Chinese words
             const playAudio = (text) => {
                 if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel(); // Clear queue to fix iOS/Safari bug and play immediately
                     const utterance = new SpeechSynthesisUtterance(text);
                     utterance.lang = 'zh-CN';
                     utterance.rate = 0.85; 
+                    
+                    // Try to load a specific Chinese voice for better cross-device compatibility
+                    const voices = window.speechSynthesis.getVoices();
+                    if (voices.length > 0) {
+                        const zhVoice = voices.find(v => v.lang.includes('zh') || v.lang.includes('ZH'));
+                        if (zhVoice) utterance.voice = zhVoice;
+                    }
+                    
                     window.speechSynthesis.speak(utterance);
                 }
             };
@@ -219,15 +241,40 @@
                     const { collection, getDocs } = window.FirebaseAPI;
                     const lbCol = collection(dbInstance, 'artifacts', appId, 'public', 'data', 'leaderboard');
                     const snapshot = await getDocs(lbCol);
-                    const list = [];
+                    
+                    // Add Mock Data for challenge
+                    const mockData = [
+                        { id: 'mock1', displayName: 'หลงเกอ 🐉', totalScore: 85 },
+                        { id: 'mock2', displayName: 'น้องเหมยลี่ 🌸', totalScore: 62 },
+                        { id: 'mock3', displayName: 'อาตี๋น้อย 👦', totalScore: 45 },
+                        { id: 'mock4', displayName: 'แพนด้าอ้วน 🐼', totalScore: 30 },
+                        { id: 'mock5', displayName: 'เสี่ยวหง 🍎', totalScore: 15 }
+                    ];
+                    
+                    const list = [...mockData];
                     snapshot.forEach(doc => {
-                        list.push({ id: doc.id, ...doc.data() });
+                        // Avoid duplication if ID matches
+                        if (!list.find(item => item.id === doc.id)) {
+                            list.push({ id: doc.id, ...doc.data() });
+                        }
                     });
                     // Sort locally by total score in descending order
                     list.sort((a, b) => b.totalScore - a.totalScore);
                     setLeaderboardData(list.slice(0, 50)); // Display top 50
                 } catch (error) {
                     console.error("Fetch leaderboard error:", error);
+                }
+            };
+            
+            // Logout Function
+            const handleLogout = async () => {
+                try {
+                    const { getAuth, signOut } = window.FirebaseAPI;
+                    const auth = getAuth();
+                    await signOut(auth);
+                    window.location.reload(); // Reload to clear memory and re-authenticate as new user
+                } catch (error) {
+                    console.error("Logout error:", error);
                 }
             };
 
@@ -344,7 +391,12 @@
                             </div>
                             <div>
                                 <h3 className="font-bold text-gray-800">{profile.displayName}</h3>
-                                <p className="text-sm text-gray-500">นักเรียนคนเก่ง</p>
+                                <div className="flex items-center gap-2 text-xs mt-1">
+                                    <span className="flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-full font-medium">
+                                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                        ออนไลน์ {onlineUsers} คน
+                                    </span>
+                                </div>
                             </div>
                         </div>
                         <div className="flex items-center gap-4 flex-wrap">
@@ -361,6 +413,11 @@
                                 onClick={fetchLeaderboard}
                                 className="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl shadow transition flex items-center gap-2 font-medium">
                                 <i className="fas fa-trophy"></i> <span className="hidden sm:inline">จัดอันดับ</span>
+                            </button>
+                            <button 
+                                onClick={handleLogout}
+                                className="bg-red-50 hover:bg-red-100 text-red-500 p-3 rounded-xl border border-red-200 shadow-sm transition flex items-center gap-2 font-medium">
+                                <i className="fas fa-sign-out-alt"></i> <span className="hidden sm:inline">ออก</span>
                             </button>
                         </div>
                     </div>
