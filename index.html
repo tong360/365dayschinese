@@ -10,23 +10,42 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
     <style>
         body {
             font-family: 'Kanit', sans-serif;
-            background-color: #f0fdfa;
-            background-image: radial-gradient(#bae6fd 2px, transparent 2px);
-            background-size: 30px 30px;
+            background-color: #fffbeb; /* Soft yellow background */
+            background-image: 
+                radial-gradient(#fde68a 2px, transparent 2px),
+                radial-gradient(#fde68a 2px, transparent 2px);
+            background-size: 40px 40px;
+            background-position: 0 0, 20px 20px;
             margin: 0;
             padding: 0;
             min-height: 100vh;
-            /* Prevent pull-to-refresh on mobile */
             overscroll-behavior-y: contain; 
         }
+        
+        /* 3D Game Button Style */
+        .btn-3d {
+            transition: all 0.1s;
+            box-shadow: 0 6px 0 rgba(0, 0, 0, 0.15);
+            transform: translateY(0);
+        }
+        .btn-3d:active {
+            box-shadow: 0 0px 0 rgba(0, 0, 0, 0.15);
+            transform: translateY(6px);
+        }
+        .btn-3d:disabled {
+            box-shadow: 0 2px 0 rgba(0, 0, 0, 0.1);
+            transform: translateY(4px);
+            opacity: 0.7;
+        }
+
         .flip-card { perspective: 1000px; }
         .flip-card-inner {
-            transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1);
+            transition: transform 0.5s cubic-bezier(0.4, 0.2, 0.2, 1.5); /* Bouncier flip */
             transform-style: preserve-3d;
         }
         .flip-card.flipped .flip-card-inner { transform: rotateY(180deg); }
@@ -35,14 +54,34 @@
             -webkit-backface-visibility: hidden;
         }
         .flip-card-back { transform: rotateY(180deg); }
-        .animate-bounce-slow { animation: bounce 3s infinite; }
-        .pulse-soft { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         
-        /* Custom scrollbar for leaderboard */
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        /* Fun Animations */
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px) rotate(-5deg); }
+            75% { transform: translateX(5px) rotate(5deg); }
+        }
+        .animate-shake { animation: shake 0.4s ease-in-out; }
+
+        /* Custom scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #fef3c7; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #fcd34d; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #fbbf24; }
     </style>
 </head>
 <body>
@@ -62,7 +101,7 @@
     </script>
 
     <script type="text/babel">
-        // ข้อมูลคำศัพท์
+        // ข้อมูลคำศัพท์ (เหมือนเดิม)
         const VOCAB_DATA = {
             beginner: {
                 title: "ขั้นต้น (ป.4)", color: "from-green-400 to-emerald-500", icon: "🌱",
@@ -98,35 +137,30 @@
 
         const App = () => {
             const [isFirebaseReady, setIsFirebaseReady] = React.useState(!!window.FirebaseAPI);
-            const [appState, setAppState] = React.useState('loading'); // loading, home, learn, quiz, result, leaderboard, progress
+            const [appState, setAppState] = React.useState('loading'); 
             const [user, setUser] = React.useState(null);
             
-            // ข้อมูลผู้ใช้
             const [profile, setProfile] = React.useState({ 
-                displayName: '', 
-                scores: { beginner: 0, intermediate: 0, advanced: 0 }, 
-                totalScore: 0,
+                displayName: '', scores: { beginner: 0, intermediate: 0, advanced: 0 }, totalScore: 0,
                 learningHistory: { beginner: 0, intermediate: 0, advanced: 0 } 
             });
             const [leaderboardData, setLeaderboardData] = React.useState([]);
             const [dbInstance, setDbInstance] = React.useState(null);
             
-            // สถานะเกมและการเรียน
             const [currentLevel, setCurrentLevel] = React.useState(null);
             const [currentIndex, setCurrentIndex] = React.useState(0);
             const [score, setScore] = React.useState(0);
             const [isFlipped, setIsFlipped] = React.useState(false);
             const [quizQuestions, setQuizQuestions] = React.useState([]);
             
-            // คนออนไลน์จำลอง
+            // สถานะใหม่สำหรับเกม
             const [onlineUsers, setOnlineUsers] = React.useState(15);
-            
-            // สถานะปลดล็อกเสียง
             const [audioUnlocked, setAudioUnlocked] = React.useState(false);
+            const [quizFeedback, setQuizFeedback] = React.useState(null); // เก็บว่าตอบถูกหรือผิด
+            const [showHint, setShowHint] = React.useState(false); // ตัวช่วยดู Pinyin
 
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'chinese-kids-app-v2';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'chinese-kids-app-v3';
 
-            // ปลดล็อกระบบเสียงสำหรับมือถือทันทีที่ผู้ใช้แตะหน้าจอครั้งแรก
             React.useEffect(() => {
                 const unlockAudio = () => {
                     if (!audioUnlocked && 'speechSynthesis' in window) {
@@ -145,17 +179,16 @@
                 };
             }, [audioUnlocked]);
 
-            // บันทึกสถานะปัจจุบันเสมอเพื่อให้เวลารีเฟรชแล้วอยู่หน้าเดิม
             React.useEffect(() => {
                 if (appState !== 'loading') {
-                    localStorage.setItem('chineseApp_savedState_v2', JSON.stringify({
+                    localStorage.setItem('chineseApp_savedState_v3', JSON.stringify({
                         appState, currentLevel, currentIndex, score, quizQuestions
                     }));
                 }
             }, [appState, currentLevel, currentIndex, score, quizQuestions]);
 
             const restoreState = () => {
-                const saved = localStorage.getItem('chineseApp_savedState_v2');
+                const saved = localStorage.getItem('chineseApp_savedState_v3');
                 if (saved) {
                     try {
                         const parsed = JSON.parse(saved);
@@ -167,7 +200,7 @@
                             setAppState(parsed.appState);
                             return;
                         }
-                    } catch(e) { console.error("Restore state error", e); }
+                    } catch(e) {}
                 }
                 setAppState('home'); 
             };
@@ -176,14 +209,10 @@
                 const handleReady = () => setIsFirebaseReady(true);
                 window.addEventListener('firebase-ready', handleReady);
                 
-                // ระบบสุ่มคนออนไลน์หลัก 10 คน
-                setOnlineUsers(Math.floor(Math.random() * 80) + 15);
+                setOnlineUsers(Math.floor(Math.random() * 40) + 12);
                 const interval = setInterval(() => {
-                    setOnlineUsers(prev => {
-                        const change = Math.floor(Math.random() * 5) - 2; 
-                        return Math.max(12, Math.min(99, prev + change));
-                    });
-                }, 8000);
+                    setOnlineUsers(prev => Math.max(10, Math.min(60, prev + (Math.floor(Math.random() * 3) - 1))));
+                }, 5000);
                 
                 return () => {
                     window.removeEventListener('firebase-ready', handleReady);
@@ -193,83 +222,48 @@
 
             React.useEffect(() => {
                 if (!isFirebaseReady) return;
-                
                 const initApp = async () => {
                     try {
-                        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence, onAuthStateChanged, getFirestore, doc, getDoc, setDoc } = window.FirebaseAPI;
-                        
+                        const { initializeApp, getAuth, signInAnonymously, setPersistence, browserLocalPersistence, onAuthStateChanged, getFirestore, doc, getDoc, setDoc } = window.FirebaseAPI;
                         let firebaseConfig = { projectId: "demo-project" };
-                        if (typeof __firebase_config !== 'undefined') {
-                            firebaseConfig = JSON.parse(__firebase_config);
-                        }
+                        if (typeof __firebase_config !== 'undefined') { firebaseConfig = JSON.parse(__firebase_config); }
                         
                         const app = initializeApp(firebaseConfig);
                         const auth = getAuth(app);
                         const db = getFirestore(app);
                         setDbInstance(db);
 
-                        // บังคับจำค่าในเครื่อง (ไม่ให้ล็อกเอาท์)
                         await setPersistence(auth, browserLocalPersistence);
 
-                        // จัดการ Auth Flow อย่างรัดกุม ข้ามหน้า Login อัตโนมัติ
-                        const checkUserAndFetchProfile = async (currentUser) => {
-                            if (!currentUser) return;
-                            setUser(currentUser);
-                            try {
-                                const profileRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'main');
-                                const profileSnap = await getDoc(profileRef);
-                                
-                                if (profileSnap.exists()) {
-                                    const data = profileSnap.data();
-                                    if(!data.learningHistory) data.learningHistory = { beginner: 0, intermediate: 0, advanced: 0 };
-                                    setProfile(data);
-                                    restoreState(); // อ่านค่าจาก LocalStorage แล้วพาไปหน้าที่ค้างไว้
-                                } else {
-                                    // สร้างโปรไฟล์ให้อัตโนมัติด้วยชื่อสุ่ม (ไม่มีหน้า Setup/Login)
-                                    const randomName = "นักเรียน_" + Math.floor(1000 + Math.random() * 9000);
-                                    const newProfile = {
-                                        displayName: randomName,
-                                        scores: { beginner: 0, intermediate: 0, advanced: 0 },
-                                        totalScore: 0,
-                                        learningHistory: { beginner: 0, intermediate: 0, advanced: 0 }
-                                    };
-                                    await setDoc(profileRef, newProfile);
-                                    setProfile(newProfile);
-                                    
-                                    // สร้างตารางคะแนนเริ่มต้น
-                                    const lbRef = doc(db, 'artifacts', appId, 'public', 'data', 'leaderboard', currentUser.uid);
-                                    await setDoc(lbRef, {
-                                        displayName: randomName,
-                                        totalScore: 0,
-                                        lastUpdated: Date.now()
-                                    });
-                                    
-                                    restoreState(); 
-                                }
-                            } catch (e) {
-                                console.error("Profile fetch error", e);
-                                restoreState();
-                            }
-                        };
-
-                        // ใช้ onAuthStateChanged เพื่อจับสถานะการล็อกอินที่แม่นยำ
                         onAuthStateChanged(auth, async (currentUser) => {
                             if (currentUser) {
-                                await checkUserAndFetchProfile(currentUser);
+                                try {
+                                    const profileRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'main');
+                                    const profileSnap = await getDoc(profileRef);
+                                    
+                                    if (profileSnap.exists()) {
+                                        const data = profileSnap.data();
+                                        if(!data.learningHistory) data.learningHistory = { beginner: 0, intermediate: 0, advanced: 0 };
+                                        setProfile(data);
+                                    } else {
+                                        const randomName = "ผู้เล่น_" + Math.floor(1000 + Math.random() * 9000);
+                                        const newProfile = {
+                                            displayName: randomName, scores: { beginner: 0, intermediate: 0, advanced: 0 }, totalScore: 0,
+                                            learningHistory: { beginner: 0, intermediate: 0, advanced: 0 }
+                                        };
+                                        await setDoc(profileRef, newProfile);
+                                        setProfile(newProfile);
+                                        
+                                        const lbRef = doc(db, 'artifacts', appId, 'public', 'data', 'leaderboard', currentUser.uid);
+                                        await setDoc(lbRef, { displayName: randomName, totalScore: 0, lastUpdated: Date.now() });
+                                    }
+                                    restoreState(); 
+                                } catch (e) { restoreState(); }
                             } else {
-                                // ถ้าไม่มี User ให้สร้างใหม่แบบ Anonymous
-                                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                    await signInWithCustomToken(auth, __initial_auth_token);
-                                } else {
-                                    await signInAnonymously(auth);
-                                }
+                                await signInAnonymously(auth);
                             }
                         });
-
-                    } catch (error) {
-                        console.error("Firebase Init Error:", error);
-                        restoreState();
-                    }
+                    } catch (error) { restoreState(); }
                 };
                 initApp();
             }, [isFirebaseReady]);
@@ -280,12 +274,6 @@
                     const utterance = new SpeechSynthesisUtterance(text);
                     utterance.lang = 'zh-CN';
                     utterance.rate = window.innerWidth < 768 ? 0.75 : 0.85; 
-                    
-                    const voices = window.speechSynthesis.getVoices();
-                    if (voices.length > 0) {
-                        const zhVoice = voices.find(v => v.lang === 'zh-CN' || v.lang.includes('zh') || v.lang.includes('ZH'));
-                        if (zhVoice) utterance.voice = zhVoice;
-                    }
                     window.speechSynthesis.speak(utterance);
                 }
             };
@@ -293,21 +281,13 @@
             const saveProfile = async (newProfile) => {
                 setProfile(newProfile); 
                 if (!user || !dbInstance) return;
-                
                 try {
                     const { doc, setDoc } = window.FirebaseAPI;
-                    const profileRef = doc(dbInstance, 'artifacts', appId, 'users', user.uid, 'profile', 'main');
-                    await setDoc(profileRef, newProfile);
-                    
-                    const lbRef = doc(dbInstance, 'artifacts', appId, 'public', 'data', 'leaderboard', user.uid);
-                    await setDoc(lbRef, {
-                        displayName: newProfile.displayName,
-                        totalScore: newProfile.totalScore,
-                        lastUpdated: Date.now()
+                    await setDoc(doc(dbInstance, 'artifacts', appId, 'users', user.uid, 'profile', 'main'), newProfile);
+                    await setDoc(doc(dbInstance, 'artifacts', appId, 'public', 'data', 'leaderboard', user.uid), {
+                        displayName: newProfile.displayName, totalScore: newProfile.totalScore, lastUpdated: Date.now()
                     });
-                } catch (error) {
-                    console.error("Save profile error:", error);
-                }
+                } catch (error) {}
             };
 
             const fetchLeaderboard = async () => {
@@ -315,37 +295,28 @@
                 setAppState('leaderboard');
                 try {
                     const { collection, getDocs } = window.FirebaseAPI;
-                    const lbCol = collection(dbInstance, 'artifacts', appId, 'public', 'data', 'leaderboard');
-                    const snapshot = await getDocs(lbCol);
+                    const snapshot = await getDocs(collection(dbInstance, 'artifacts', appId, 'public', 'data', 'leaderboard'));
                     
-                    // ระบบแข่งขัน Mock Data เพื่อความท้าทาย
                     const mockData = [
-                        { id: 'mock1', displayName: 'เซียนภาษาจีน 🐉', totalScore: 15 },
-                        { id: 'mock2', displayName: 'น้องเหมยลี่ 🌸', totalScore: 14 },
-                        { id: 'mock3', displayName: 'อาตี๋น้อย 👦', totalScore: 11 },
-                        { id: 'mock4', displayName: 'แพนด้าอ้วน 🐼', totalScore: 8 },
-                        { id: 'mock5', displayName: 'เสี่ยวหง 🍎', totalScore: 4 }
+                        { id: 'm1', displayName: 'เสี่ยวหง 👧🏻', totalScore: 15 },
+                        { id: 'm2', displayName: 'อาหลง 🐉', totalScore: 12 },
+                        { id: 'm3', displayName: 'พี่แพนด้า 🐼', totalScore: 8 }
                     ];
                     
                     const list = [...mockData];
                     snapshot.forEach(doc => {
-                        if (!list.find(item => item.id === doc.id)) {
-                            list.push({ id: doc.id, ...doc.data() });
-                        }
+                        if (!list.find(item => item.id === doc.id)) { list.push({ id: doc.id, ...doc.data() }); }
                     });
                     
                     list.sort((a, b) => b.totalScore - a.totalScore);
-                    setLeaderboardData(list.slice(0, 50));
-                } catch (error) {
-                    console.error("Fetch leaderboard error:", error);
-                }
+                    setLeaderboardData(list.slice(0, 20));
+                } catch (error) {}
             };
 
             const handleRename = () => {
-                const newName = prompt("ตั้งชื่อเล่นใหม่ของคุณ (ไม่เกิน 15 ตัวอักษร):", profile.displayName);
+                const newName = prompt("ตั้งชื่อในเกมของหนู (ไม่เกิน 15 ตัวอักษร):", profile.displayName);
                 if (newName && newName.trim() !== "" && newName.trim() !== profile.displayName) {
-                    const newProfile = { ...profile, displayName: newName.trim().substring(0, 15) };
-                    saveProfile(newProfile);
+                    saveProfile({ ...profile, displayName: newName.trim().substring(0, 15) });
                 }
             };
 
@@ -359,8 +330,7 @@
             const updateLearningProgress = (level, index) => {
                 const currentLearned = profile.learningHistory[level] || 0;
                 if (index >= currentLearned) {
-                    const newHistory = { ...profile.learningHistory, [level]: index + 1 };
-                    saveProfile({ ...profile, learningHistory: newHistory });
+                    saveProfile({ ...profile, learningHistory: { ...profile.learningHistory, [level]: index + 1 } });
                 }
             };
 
@@ -372,138 +342,124 @@
                 const questions = selected.map(word => {
                     const otherWords = words.filter(w => w.ch !== word.ch);
                     const wrongOptions = [...otherWords].sort(() => 0.5 - Math.random()).slice(0, 3).map(w => w.th);
-                    const options = [...wrongOptions, word.th].sort(() => 0.5 - Math.random());
-                    return { ...word, options: options };
+                    return { ...word, options: [...wrongOptions, word.th].sort(() => 0.5 - Math.random()) };
                 });
 
                 setQuizQuestions(questions);
                 setCurrentLevel(level);
                 setCurrentIndex(0);
                 setScore(0);
+                setQuizFeedback(null);
+                setShowHint(false);
                 setAppState('quiz');
             };
 
+            // ระบบตอบคำถามแบบเกม (หน่วงเวลาโชว์เฉลย)
             const handleAnswer = (selectedOption) => {
+                if (quizFeedback) return; // ป้องกันการกดซ้ำระหว่างโชว์เฉลย
+                
                 const currentQ = quizQuestions[currentIndex];
                 const isCorrect = selectedOption === currentQ.th;
                 
-                if (isCorrect) setScore(prev => prev + 1);
+                setQuizFeedback({ selected: selectedOption, isCorrect: isCorrect, correctOption: currentQ.th });
+                if (isCorrect) playAudio(currentQ.ch); // พูดซ้ำถ้าถูก
                 
-                if (currentIndex < quizQuestions.length - 1) {
-                    setCurrentIndex(currentIndex + 1);
-                } else {
-                    const finalScore = isCorrect ? score + 1 : score;
-                    const prevBest = profile.scores[currentLevel] || 0;
+                setTimeout(() => {
+                    if (isCorrect) setScore(prev => prev + 1);
                     
-                    if (finalScore > prevBest) {
-                        const newScores = { ...profile.scores, [currentLevel]: finalScore };
-                        const newTotal = Object.values(newScores).reduce((a, b) => a + b, 0);
-                        saveProfile({ ...profile, scores: newScores, totalScore: newTotal });
+                    if (currentIndex < quizQuestions.length - 1) {
+                        setCurrentIndex(currentIndex + 1);
+                        setQuizFeedback(null);
+                        setShowHint(false);
+                    } else {
+                        const finalScore = isCorrect ? score + 1 : score;
+                        const prevBest = profile.scores[currentLevel] || 0;
+                        if (finalScore > prevBest) {
+                            const newScores = { ...profile.scores, [currentLevel]: finalScore };
+                            const newTotal = Object.values(newScores).reduce((a, b) => a + b, 0);
+                            saveProfile({ ...profile, scores: newScores, totalScore: newTotal });
+                        }
+                        setScore(finalScore);
+                        setQuizFeedback(null);
+                        setAppState('result');
                     }
-                    setScore(finalScore);
-                    setAppState('result');
-                }
+                }, 1500); // รอ 1.5 วิให้เด็กดูเฉลย
             };
 
             if (appState === 'loading') {
                 return (
-                    <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
-                        <i className="fas fa-spinner fa-spin w-16 h-16 text-red-500 mb-4 text-6xl"></i>
-                        <h2 className="text-2xl font-bold text-gray-600 pulse-soft">กำลังโหลดข้อมูล...</h2>
+                    <div className="flex flex-col items-center justify-center min-h-screen text-center">
+                        <div className="text-6xl animate-bounce mb-4">🐼</div>
+                        <h2 className="text-2xl font-bold text-orange-500">กำลังเตรียมเกม...</h2>
                     </div>
                 );
             }
 
             const renderHome = () => (
-                <div className="flex flex-col items-center justify-center min-h-screen p-4 py-10">
-                    <div className="w-full max-w-4xl flex justify-between items-center bg-white p-4 rounded-3xl shadow-md mb-8 flex-wrap gap-4">
-                        <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-orange-100 text-orange-500 rounded-full flex justify-center items-center text-2xl font-bold border-2 border-orange-200">
+                <div className="flex flex-col items-center min-h-screen p-4 pb-20 max-w-lg mx-auto w-full">
+                    {/* Top Bar */}
+                    <div className="w-full flex justify-between items-center bg-white p-3 rounded-full shadow-sm mb-6 border-2 border-orange-100">
+                        <div className="flex items-center gap-2 cursor-pointer" onClick={handleRename}>
+                            <div className="w-10 h-10 bg-orange-400 text-white rounded-full flex justify-center items-center text-xl font-bold">
                                 {profile.displayName.charAt(0) || "👤"}
                             </div>
-                            <div>
-                                <h3 className="font-bold text-gray-800 flex items-center gap-2 cursor-pointer hover:text-blue-500 transition" onClick={handleRename} title="คลิกเพื่อเปลี่ยนชื่อ">
-                                    {profile.displayName} <i className="fas fa-pencil-alt text-xs text-gray-400"></i>
-                                </h3>
-                                <div className="flex items-center gap-2 text-xs mt-1">
-                                    <span className="flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-full font-medium border border-green-100">
-                                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                                        เพื่อนกำลังออนไลน์ {onlineUsers} คน
-                                    </span>
-                                </div>
-                            </div>
+                            <div className="font-bold text-gray-700 max-w-[100px] truncate">{profile.displayName}</div>
+                            <i className="fas fa-pen text-gray-300 text-xs"></i>
                         </div>
-                        <div className="flex items-center gap-4 flex-wrap">
-                            <div className="bg-yellow-50 px-4 py-2 rounded-xl flex items-center gap-2 border border-yellow-200">
-                                <i className="fas fa-star text-yellow-500"></i>
-                                <span className="font-bold text-yellow-700 text-lg">รวม: {profile.totalScore} คะแนน</span>
+                        <div className="flex gap-2">
+                            <div className="bg-yellow-100 px-3 py-1 rounded-full flex items-center gap-1 border border-yellow-300 font-bold text-yellow-600">
+                                ⭐ {profile.totalScore}
                             </div>
-                            <button 
-                                onClick={() => setAppState('progress')}
-                                className="bg-green-500 hover:bg-green-600 text-white p-3 rounded-xl shadow transition flex items-center gap-2 font-medium">
-                                <i className="fas fa-chart-bar"></i> <span className="hidden sm:inline">ความคืบหน้า</span>
-                            </button>
-                            <button 
-                                onClick={fetchLeaderboard}
-                                className="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl shadow transition flex items-center gap-2 font-medium">
-                                <i className="fas fa-trophy"></i> <span className="hidden sm:inline">จัดอันดับ</span>
+                            <button onClick={fetchLeaderboard} className="w-10 h-10 bg-blue-500 text-white rounded-full flex justify-center items-center shadow-md btn-3d">
+                                <i className="fas fa-trophy"></i>
                             </button>
                         </div>
                     </div>
 
-                    <div className="text-center mb-10 animate-bounce-slow">
-                        <h1 className="text-5xl md:text-6xl font-bold text-red-600 mb-4 drop-shadow-md">
-                            🇨🇳 สนุกกับภาษาจีน
-                        </h1>
-                        <p className="text-xl text-gray-700 font-medium bg-white px-6 py-2 rounded-full shadow-sm inline-block">
-                            เลือกบทเรียนที่หนูๆ ต้องการเรียนเลย!
-                        </p>
+                    {/* Mascot Area */}
+                    <div className="text-center mb-8 animate-float">
+                        <div className="text-8xl drop-shadow-md mb-2">🐼</div>
+                        <div className="bg-white px-6 py-3 rounded-3xl shadow-md border-2 border-gray-100 relative inline-block">
+                            <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white rotate-45 border-l-2 border-t-2 border-gray-100"></div>
+                            <h1 className="text-2xl font-black text-orange-500">เก่งภาษาจีนกันเถอะ!</h1>
+                            <p className="text-sm text-gray-500 font-medium">เพื่อนกำลังเล่นอยู่ {onlineUsers} คน 🔥</p>
+                        </div>
                     </div>
 
-                    <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {Object.entries(VOCAB_DATA).map(([key, data]) => {
+                    {/* Level Cards */}
+                    <div className="w-full flex flex-col gap-5">
+                        {Object.entries(VOCAB_DATA).map(([key, data], idx) => {
                             const maxScore = profile.scores[key] || 0;
                             const isPerfect = maxScore === 5;
-                            const wordsLearned = profile.learningHistory[key] || 0;
-                            const totalWords = data.words.length;
-                            const progressPercent = Math.round((wordsLearned / totalWords) * 100);
+                            const btnColors = ["bg-green-400 border-green-500", "bg-blue-400 border-blue-500", "bg-purple-400 border-purple-500"];
+                            const colorClass = btnColors[idx];
 
                             return (
-                                <div key={key} className="bg-white rounded-3xl shadow-xl overflow-hidden transform transition hover:-translate-y-2 border-4 border-transparent hover:border-red-400 relative">
+                                <div key={key} className="bg-white rounded-[32px] p-2 shadow-lg border-b-8 border-gray-200 relative animate-pop" style={{animationDelay: `${idx * 0.1}s`}}>
                                     {isPerfect && (
-                                        <div className="absolute top-2 right-2 bg-yellow-400 text-yellow-900 text-xs font-bold px-3 py-1 rounded-full shadow-md z-10 flex items-center gap-1">
-                                            <i className="fas fa-medal"></i> ผ่านแล้ว!
-                                        </div>
+                                        <div className="absolute -top-3 -right-3 text-4xl animate-bounce z-10 drop-shadow-md">👑</div>
                                     )}
-                                    <div className={`h-28 bg-gradient-to-br ${data.color} flex flex-col items-center justify-center p-4`}>
-                                        <div className="text-3xl mb-1">{data.icon}</div>
-                                        <h2 className="text-2xl font-bold text-white text-center leading-tight">{data.title}</h2>
+                                    <div className={`rounded-[24px] p-5 flex items-center justify-between ${isPerfect ? 'bg-yellow-50' : ''}`}>
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-5xl bg-white w-16 h-16 flex items-center justify-center rounded-2xl shadow-sm border-2 border-gray-100">
+                                                {data.icon}
+                                            </div>
+                                            <div>
+                                                <h2 className="text-2xl font-black text-gray-800">{data.title}</h2>
+                                                <div className="flex text-yellow-400 text-sm mt-1">
+                                                    {[...Array(5)].map((_, i) => (
+                                                        <i key={i} className={`fa-star ${i < maxScore ? 'fas' : 'far text-gray-300'}`}></i>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="p-5 flex flex-col gap-3">
-                                        <div className="flex flex-col gap-1 mb-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-sm text-gray-500">เรียนไปแล้ว:</span>
-                                                <span className="text-sm font-bold text-gray-700">{progressPercent}%</span>
-                                            </div>
-                                            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                                                <div className="bg-green-500 h-2 rounded-full transition-all duration-1000" style={{ width: `${progressPercent}%` }}></div>
-                                            </div>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl mb-2">
-                                            <span className="text-sm font-medium text-gray-500">คะแนนสูงสุด:</span>
-                                            <span className={`font-bold ${isPerfect ? 'text-green-600' : 'text-blue-600'}`}>
-                                                {maxScore} / 5
-                                            </span>
-                                        </div>
-                                        <button 
-                                            onClick={() => { updateLearningProgress(key, 0); startLearning(key); }}
-                                            className="w-full py-3 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2 text-lg">
-                                            <i className="fas fa-book-open"></i> เรียนรู้คำศัพท์
+                                    <div className="grid grid-cols-2 gap-2 p-2">
+                                        <button onClick={() => startLearning(key)} className={`btn-3d py-3 rounded-2xl font-bold text-white text-lg flex items-center justify-center gap-2 ${colorClass}`}>
+                                            <i className="fas fa-book-open"></i> เรียน
                                         </button>
-                                        <button 
-                                            onClick={() => startQuiz(key)}
-                                            className="w-full py-3 bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold rounded-xl shadow-sm transition flex items-center justify-center gap-2 text-lg">
-                                            <i className="fas fa-gamepad"></i> ทดสอบความรู้
+                                        <button onClick={() => startQuiz(key)} className={`btn-3d py-3 rounded-2xl font-bold text-white text-lg flex items-center justify-center gap-2 ${maxScore > 0 ? 'bg-orange-400 border-orange-500' : 'bg-gray-300 border-gray-400'}`}>
+                                            <i className="fas fa-gamepad"></i> แข่ง
                                         </button>
                                     </div>
                                 </div>
@@ -513,226 +469,130 @@
                 </div>
             );
 
-            const renderProgress = () => (
-                <div className="flex flex-col items-center min-h-screen p-4 max-w-2xl mx-auto w-full py-10">
-                    <div className="w-full flex justify-between items-center mb-8">
-                        <button onClick={() => setAppState('home')} className="p-4 bg-white rounded-full shadow-md text-gray-600 hover:text-red-500 transition">
-                            <i className="fas fa-arrow-left text-xl"></i>
-                        </button>
-                        <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-2">
-                            <i className="fas fa-chart-pie text-green-500"></i> ข้อมูลการเรียนรู้
-                        </h1>
-                        <div className="w-12"></div>
-                    </div>
-
-                    <div className="bg-white w-full rounded-3xl shadow-xl p-8 mb-6 border-t-8 border-green-400">
-                        <div className="text-center mb-6">
-                            <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex justify-center items-center text-4xl mx-auto mb-4 border-4 border-green-200">
-                                📈
-                            </div>
-                            <h2 className="text-2xl font-bold text-gray-800">สถิติของ {profile.displayName}</h2>
-                            <p className="text-gray-500">มาดูกันว่าหนูเรียนไปถึงไหนแล้ว พยายามเข้านะ!</p>
-                        </div>
-
-                        <div className="grid gap-6">
-                            {Object.entries(VOCAB_DATA).map(([key, data]) => {
-                                const wordsLearned = profile.learningHistory[key] || 0;
-                                const totalWords = data.words.length;
-                                const progressPercent = Math.round((wordsLearned / totalWords) * 100);
-                                const maxScore = profile.scores[key] || 0;
-                                
-                                return (
-                                    <div key={key} className="border-b pb-4 last:border-b-0 last:pb-0">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="font-bold text-lg text-gray-700">{data.icon} {data.title}</span>
-                                            <span className="font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full text-sm">
-                                                คะแนนทดสอบ: {maxScore}/5
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center text-sm text-gray-500 mb-1">
-                                            <span>เรียนรู้คำศัพท์ไปแล้ว</span>
-                                            <span>{wordsLearned} / {totalWords} คำ ({progressPercent}%)</span>
-                                        </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                                            <div className="bg-gradient-to-r from-green-400 to-green-500 h-3 rounded-full transition-all duration-1000" style={{ width: `${progressPercent}%` }}></div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </div>
-            );
-
-            const renderLeaderboard = () => (
-                <div className="flex flex-col items-center min-h-screen p-4 max-w-2xl mx-auto w-full py-10">
-                    <div className="w-full flex justify-between items-center mb-8">
-                        <button onClick={() => setAppState('home')} className="p-4 bg-white rounded-full shadow-md text-gray-600 hover:text-red-500 transition">
-                            <i className="fas fa-arrow-left text-xl"></i>
-                        </button>
-                        <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-2">
-                            <i className="fas fa-trophy text-yellow-500"></i> กระดานผู้นำ
-                        </h1>
-                        <div className="w-12"></div>
-                    </div>
-
-                    <div className="bg-white w-full rounded-3xl shadow-xl overflow-hidden flex flex-col max-h-[70vh]">
-                        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-6 text-white text-center">
-                            <p className="opacity-80 text-sm mb-1">สุดยอดนักเรียนภาษาจีน</p>
-                            <h2 className="text-2xl font-bold">ใครทำคะแนนรวมได้ 15 คะแนนบ้าง?</h2>
-                        </div>
-                        
-                        <div className="overflow-y-auto custom-scrollbar p-2 flex-grow">
-                            {leaderboardData.length === 0 ? (
-                                <div className="p-10 text-center text-gray-500">
-                                    <i className="fas fa-ghost w-12 h-12 mx-auto mb-2 opacity-50 text-4xl"></i>
-                                    <p>กำลังโหลดข้อมูลผู้เล่น...</p>
-                                </div>
-                            ) : (
-                                leaderboardData.map((entry, idx) => (
-                                    <div key={entry.id} className={`flex items-center justify-between p-4 mb-2 rounded-2xl ${idx === 0 ? 'bg-yellow-50 border border-yellow-200 shadow-sm transform scale-100 hover:scale-105 transition' : idx === 1 ? 'bg-gray-50 border border-gray-200' : idx === 2 ? 'bg-orange-50 border border-orange-100' : 'bg-white hover:bg-gray-50'}`}>
-                                        <div className="flex items-center gap-4">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shadow-sm
-                                                ${idx === 0 ? 'bg-yellow-400 text-yellow-900' : idx === 1 ? 'bg-gray-300 text-gray-800' : idx === 2 ? 'bg-orange-300 text-orange-900' : 'bg-blue-100 text-blue-800'}
-                                            `}>
-                                                {idx + 1}
-                                            </div>
-                                            <span className={`font-bold ${idx < 3 ? 'text-lg' : 'text-md'} ${entry.id === user?.uid ? 'text-blue-600' : 'text-gray-700'}`}>
-                                                {entry.displayName} {entry.id === user?.uid && <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full ml-1">(หนูเอง)</span>}
-                                            </span>
-                                        </div>
-                                        <div className="font-black text-xl text-yellow-600 flex items-center gap-1">
-                                            {entry.totalScore} <span className="text-sm font-normal text-gray-400">/ 15</span> <i className="fas fa-star text-yellow-400 ml-1"></i>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-            );
-
             const renderLearn = () => {
                 const words = VOCAB_DATA[currentLevel].words;
                 const word = words[currentIndex];
+                const progress = ((currentIndex + 1) / words.length) * 100;
 
                 return (
-                    <div className="flex flex-col items-center justify-center min-h-screen p-4 max-w-md mx-auto w-full">
-                        <div className="w-full flex justify-between items-center mb-6">
-                            <button onClick={() => setAppState('home')} className="p-4 bg-white rounded-full shadow-md text-gray-600 hover:text-red-500 transition">
-                                <i className="fas fa-home text-xl"></i>
+                    <div className="flex flex-col items-center min-h-screen p-4 max-w-md mx-auto w-full bg-white">
+                        <div className="w-full flex items-center gap-4 mb-8">
+                            <button onClick={() => setAppState('home')} className="w-12 h-12 bg-gray-100 text-gray-600 rounded-full font-bold text-xl btn-3d flex items-center justify-center">
+                                <i className="fas fa-times"></i>
                             </button>
-                            <div className="text-lg font-bold text-gray-700 bg-white px-4 py-2 rounded-full shadow-sm border border-gray-100">
-                                คำที่ {currentIndex + 1} / {words.length}
+                            <div className="flex-grow h-4 bg-gray-200 rounded-full overflow-hidden border-2 border-gray-200">
+                                <div className="h-full bg-green-400 transition-all duration-300" style={{ width: `${progress}%` }}></div>
                             </div>
-                            <div className="w-12"></div>
+                            <div className="text-gray-500 font-bold">{currentIndex + 1}/{words.length}</div>
                         </div>
 
-                        <div 
-                            className={`flip-card w-full aspect-square mb-8 cursor-pointer ${isFlipped ? 'flipped' : ''}`}
-                            onClick={() => setIsFlipped(!isFlipped)}
-                        >
+                        <div className={`flip-card w-full aspect-square max-w-[300px] mb-10 cursor-pointer ${isFlipped ? 'flipped' : ''}`} onClick={() => setIsFlipped(!isFlipped)}>
                             <div className="flip-card-inner w-full h-full relative">
-                                <div className="flip-card-front absolute w-full h-full bg-white rounded-3xl shadow-xl flex flex-col items-center justify-center p-6 border-8 border-yellow-300">
-                                    <h1 className="text-8xl font-bold text-red-600 mb-6">{word.ch}</h1>
-                                    <p className="text-gray-500 text-lg flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-full border border-gray-100">
-                                        <i className="fas fa-hand-pointer text-yellow-500 animate-pulse"></i> แตะเพื่อดูคำแปล
-                                    </p>
+                                <div className="flip-card-front absolute w-full h-full bg-yellow-50 rounded-[40px] shadow-lg flex flex-col items-center justify-center p-6 border-b-[12px] border-yellow-200">
+                                    <h1 className="text-[100px] font-black text-red-500 mb-2 leading-none">{word.ch}</h1>
+                                    <p className="text-gray-400 font-bold animate-pulse"><i className="fas fa-hand-pointer"></i> แตะเพื่อดูคำแปล</p>
                                 </div>
-                                <div className="flip-card-back absolute w-full h-full bg-red-50 rounded-3xl shadow-xl flex flex-col items-center justify-center p-6 border-8 border-red-400">
-                                    <h2 className="text-4xl font-bold text-gray-800 mb-2">{word.pinyin}</h2>
-                                    <div className="w-16 h-1 bg-red-300 my-4 rounded-full"></div>
-                                    <h3 className="text-5xl font-bold text-blue-600 mb-8 text-center">{word.th}</h3>
+                                <div className="flip-card-back absolute w-full h-full bg-blue-50 rounded-[40px] shadow-lg flex flex-col items-center justify-center p-6 border-b-[12px] border-blue-200">
+                                    <h2 className="text-4xl font-bold text-gray-500 mb-4">{word.pinyin}</h2>
+                                    <h3 className="text-5xl font-black text-blue-600 text-center">{word.th}</h3>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex justify-between items-center w-full mb-6">
-                            <button 
-                                onClick={() => { 
-                                    if(currentIndex > 0) { 
-                                        setIsFlipped(false); 
-                                        setTimeout(() => {
-                                            setCurrentIndex(currentIndex - 1);
-                                            updateLearningProgress(currentLevel, currentIndex - 1);
-                                        }, 150); 
-                                    }
-                                }}
-                                disabled={currentIndex === 0}
-                                className={`p-5 rounded-full shadow-md transition ${currentIndex === 0 ? 'bg-gray-200 text-gray-400' : 'bg-white text-blue-600 hover:bg-blue-50'}`}>
-                                <i className="fas fa-chevron-left text-2xl"></i>
+                        <div className="w-full grid grid-cols-3 gap-4 px-4">
+                            <button onClick={() => { if(currentIndex > 0) { setIsFlipped(false); setTimeout(() => setCurrentIndex(currentIndex - 1), 150); }}}
+                                disabled={currentIndex === 0} className="btn-3d h-16 bg-gray-100 rounded-2xl text-gray-500 text-2xl">
+                                <i className="fas fa-chevron-left"></i>
                             </button>
-
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); playAudio(word.ch); }}
-                                className="p-6 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-lg transition transform hover:scale-110 flex flex-col items-center pulse-soft relative">
-                                <i className="fas fa-volume-up text-3xl"></i>
-                                <span className="absolute -top-2 -right-2 bg-yellow-400 text-xs font-bold px-2 py-1 rounded-full text-yellow-900 shadow border border-yellow-200">ฟังเสียง</span>
+                            <button onClick={(e) => { e.stopPropagation(); playAudio(word.ch); }}
+                                className="btn-3d h-16 bg-green-400 border-green-500 rounded-2xl text-white text-3xl animate-bounce">
+                                <i className="fas fa-volume-up"></i>
                             </button>
-
-                            <button 
-                                onClick={() => { 
-                                    if(currentIndex < words.length - 1) { 
-                                        setIsFlipped(false); 
-                                        setTimeout(() => {
-                                            setCurrentIndex(currentIndex + 1);
-                                            updateLearningProgress(currentLevel, currentIndex + 1);
-                                        }, 150); 
-                                    }
-                                }}
-                                disabled={currentIndex === words.length - 1}
-                                className={`p-5 rounded-full shadow-md transition ${currentIndex === words.length - 1 ? 'bg-gray-200 text-gray-400' : 'bg-white text-blue-600 hover:bg-blue-50'}`}>
-                                <i className="fas fa-chevron-right text-2xl"></i>
+                            <button onClick={() => { 
+                                if(currentIndex < words.length - 1) { 
+                                    setIsFlipped(false); 
+                                    updateLearningProgress(currentLevel, currentIndex + 1);
+                                    setTimeout(() => setCurrentIndex(currentIndex + 1), 150); 
+                                } else { startQuiz(currentLevel); }
+                            }} className="btn-3d h-16 bg-blue-400 border-blue-500 rounded-2xl text-white text-2xl font-bold">
+                                {currentIndex < words.length - 1 ? <i className="fas fa-chevron-right"></i> : "ลุย!"}
                             </button>
                         </div>
-                        
-                        {currentIndex === words.length - 1 && (
-                            <button onClick={() => startQuiz(currentLevel)} className="w-full py-4 bg-blue-500 hover:bg-blue-600 text-white font-bold text-xl rounded-2xl shadow-lg transition flex justify-center items-center gap-2 animate-bounce mt-4">
-                                <i className="fas fa-gamepad"></i> ลองทำแบบทดสอบเลย!
-                            </button>
-                        )}
                     </div>
                 );
             };
 
             const renderQuiz = () => {
                 const question = quizQuestions[currentIndex];
+                // Kahoot-like colors for options
+                const colors = [
+                    "bg-red-500 border-red-600 shadow-red-700/50",
+                    "bg-blue-500 border-blue-600 shadow-blue-700/50",
+                    "bg-yellow-400 border-yellow-500 shadow-yellow-600/50",
+                    "bg-green-500 border-green-600 shadow-green-700/50"
+                ];
 
                 return (
-                    <div className="flex flex-col items-center justify-center min-h-screen p-4 max-w-md mx-auto w-full">
-                        <div className="w-full flex justify-between items-center mb-8">
-                            <button onClick={() => setAppState('home')} className="p-4 bg-white rounded-full shadow-md text-gray-600 hover:text-red-500 transition">
-                                <i className="fas fa-times text-xl"></i>
-                            </button>
-                            <div className="flex gap-2 bg-white px-4 py-2 rounded-full shadow-sm">
-                                {quizQuestions.map((_, idx) => (
-                                    <div key={idx} className={`w-3 h-3 rounded-full transition-all ${idx < currentIndex ? 'bg-green-400' : idx === currentIndex ? 'bg-blue-500 scale-125' : 'bg-gray-200'}`} />
-                                ))}
-                            </div>
-                            <div className="w-12 font-bold text-gray-500 text-right bg-white px-3 py-2 rounded-xl shadow-sm">{currentIndex + 1}/{quizQuestions.length}</div>
-                        </div>
-
-                        <div className="bg-white w-full rounded-3xl shadow-xl p-8 mb-8 flex flex-col items-center text-center border-t-8 border-blue-500 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 p-4 opacity-5"><i className="fas fa-brain text-6xl"></i></div>
-                            <h2 className="text-gray-500 text-lg mb-2 relative z-10 font-medium">คำนี้แปลว่าอะไร?</h2>
-                            <h1 className="text-7xl font-bold text-red-600 mb-6 relative z-10">{question.ch}</h1>
-                            <button 
-                                onClick={() => playAudio(question.ch)}
-                                className="px-5 py-3 bg-blue-50 text-blue-600 font-medium rounded-full hover:bg-blue-100 flex items-center gap-2 transition relative z-10 shadow-sm">
-                                <i className="fas fa-volume-up"></i> ฟังเสียงอีกครั้ง
-                            </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-4 w-full">
-                            {question.options.map((opt, idx) => (
-                                <button 
-                                    key={idx}
-                                    onClick={() => handleAnswer(opt)}
-                                    className="w-full py-4 px-6 bg-white hover:bg-blue-50 hover:border-blue-400 border-2 border-gray-100 text-gray-800 font-bold text-xl rounded-2xl shadow-sm transition transform hover:-translate-y-1 text-left flex justify-between items-center group">
-                                    <span>{opt}</span>
-                                    <div className="w-6 h-6 rounded-full border-2 border-gray-300 group-hover:border-blue-400 transition-colors"></div>
-                                </button>
+                    <div className="flex flex-col items-center min-h-screen p-4 max-w-md mx-auto w-full bg-gray-50">
+                        {/* Progress Bar */}
+                        <div className="w-full flex gap-1 mb-6">
+                            {quizQuestions.map((_, idx) => (
+                                <div key={idx} className={`h-3 flex-grow rounded-full ${idx < currentIndex ? 'bg-green-400' : idx === currentIndex ? 'bg-blue-500' : 'bg-gray-200'}`} />
                             ))}
+                        </div>
+
+                        {/* Question Card */}
+                        <div className={`bg-white w-full rounded-[32px] shadow-sm p-8 mb-6 flex flex-col items-center text-center border-b-8 border-gray-200 ${quizFeedback?.isCorrect === false ? 'animate-shake' : ''}`}>
+                            <div className="flex justify-between w-full mb-4">
+                                <div className="text-4xl">{quizFeedback ? (quizFeedback.isCorrect ? '🤩' : '😵') : '🤔'}</div>
+                                <button onClick={() => playAudio(question.ch)} className="w-12 h-12 bg-blue-100 text-blue-500 rounded-full btn-3d text-xl">
+                                    <i className="fas fa-volume-up"></i>
+                                </button>
+                            </div>
+                            <h1 className="text-[80px] font-black text-gray-800 leading-none mb-2">{question.ch}</h1>
+                            
+                            {/* ตัวช่วย Pinyin */}
+                            {showHint ? (
+                                <div className="text-2xl font-bold text-gray-400 animate-pop">{question.pinyin}</div>
+                            ) : (
+                                <button onClick={() => setShowHint(true)} className="text-sm font-bold text-orange-400 bg-orange-50 px-3 py-1 rounded-full border border-orange-200">
+                                    💡 กดดูคำอ่าน
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Game Options */}
+                        <div className="grid grid-cols-2 gap-3 w-full flex-grow content-start">
+                            {question.options.map((opt, idx) => {
+                                let btnStyle = `${colors[idx]} text-white`;
+                                let icon = null;
+                                
+                                // Logic จัดการสีปุ่มตอนเฉลย
+                                if (quizFeedback) {
+                                    if (opt === quizFeedback.correctOption) {
+                                        btnStyle = "bg-green-500 border-green-600 scale-105 z-10 shadow-lg text-white"; // ข้อที่ถูกสว่างขึ้น
+                                        icon = <i className="fas fa-check-circle text-2xl absolute top-2 right-2"></i>;
+                                    } else if (opt === quizFeedback.selected) {
+                                        btnStyle = "bg-red-500 border-red-600 opacity-90 text-white"; // ข้อที่กดผิดเป็นสีแดง
+                                        icon = <i className="fas fa-times-circle text-2xl absolute top-2 right-2"></i>;
+                                    } else {
+                                        btnStyle = "bg-gray-200 border-gray-300 text-gray-400 opacity-50"; // ข้ออื่นมืดลง
+                                    }
+                                }
+
+                                return (
+                                    <button 
+                                        key={idx}
+                                        onClick={() => handleAnswer(opt)}
+                                        disabled={quizFeedback !== null}
+                                        className={`btn-3d p-6 rounded-3xl font-black text-2xl min-h-[120px] relative transition-all duration-300 border-b-8 ${btnStyle} flex items-center justify-center text-center break-words leading-tight`}
+                                        style={{ textShadow: quizFeedback ? 'none' : '0 2px 4px rgba(0,0,0,0.2)' }}
+                                    >
+                                        {icon}
+                                        {opt}
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                 );
@@ -740,45 +600,78 @@
 
             const renderResult = () => {
                 const isPerfect = score === quizQuestions.length;
-                const isGood = score >= quizQuestions.length / 2;
-                
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen p-4 max-w-md mx-auto w-full text-center">
-                        <div className={`bg-white w-full rounded-3xl shadow-2xl p-10 flex flex-col items-center border-t-8 ${isPerfect ? 'border-yellow-400' : isGood ? 'border-green-400' : 'border-orange-400'}`}>
-                            <div className="text-8xl mb-6 animate-bounce">
-                                {isPerfect ? '🏆' : isGood ? '⭐' : '💪'}
+                        <div className="bg-white w-full rounded-[40px] shadow-xl p-8 flex flex-col items-center border-b-[16px] border-yellow-300 animate-pop">
+                            <div className="text-[120px] mb-2 drop-shadow-lg">
+                                {isPerfect ? '🏆' : score > 2 ? '🌟' : '💪'}
                             </div>
-                            <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">
-                                {isPerfect ? 'สุดยอด! เก่งมากๆ เลย' : isGood ? 'ทำได้ดีมาก พยายามอีกนิด!' : 'ไม่เป็นไรนะ ลองใหม่ได้!'}
+                            <h1 className="text-4xl font-black text-gray-800 mb-2">
+                                {isPerfect ? 'เพอร์เฟกต์!' : score > 2 ? 'เก่งมาก!' : 'สู้ต่อไป!'}
                             </h1>
-                            <p className="text-lg text-gray-500 mb-6">คะแนนที่หนูทำได้ในรอบนี้</p>
                             
-                            <div className="flex items-end justify-center gap-2 mb-10 bg-gray-50 px-8 py-4 rounded-3xl border border-gray-100">
-                                <span className={`text-7xl font-black ${isPerfect ? 'text-yellow-500' : isGood ? 'text-green-500' : 'text-orange-500'}`}>{score}</span>
-                                <span className="text-4xl font-bold text-gray-300 mb-2">/ {quizQuestions.length}</span>
+                            <div className="bg-gray-50 rounded-3xl w-full py-6 my-6 border-4 border-dashed border-gray-200">
+                                <div className="text-gray-400 font-bold mb-2">คะแนนของหนู</div>
+                                <div className="flex items-center justify-center gap-2">
+                                    <span className="text-7xl font-black text-orange-500">{score}</span>
+                                    <span className="text-4xl font-bold text-gray-300">/ 5</span>
+                                </div>
                             </div>
 
-                            <div className="flex flex-col gap-4 w-full">
-                                <button 
-                                    onClick={() => startQuiz(currentLevel)}
-                                    className="w-full py-4 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-bold text-xl rounded-2xl shadow-md transition flex justify-center items-center gap-2">
-                                    <i className="fas fa-redo"></i> เล่นอีกครั้ง
+                            <div className="grid grid-cols-2 gap-3 w-full">
+                                <button onClick={() => setAppState('home')} className="btn-3d py-4 bg-gray-100 rounded-2xl text-gray-600 font-bold text-xl">
+                                    <i className="fas fa-home"></i> กลับ
                                 </button>
-                                <button 
-                                    onClick={() => setAppState('home')}
-                                    className="w-full py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xl rounded-2xl shadow-sm transition flex justify-center items-center gap-2">
-                                    <i className="fas fa-home"></i> กลับไปหน้าหลัก
-                                </button>
-                                <button 
-                                    onClick={fetchLeaderboard}
-                                    className="w-full py-4 mt-2 border-2 border-blue-500 text-blue-600 hover:bg-blue-50 font-bold text-lg rounded-2xl transition flex justify-center items-center gap-2">
-                                    <i className="fas fa-trophy"></i> ดูอันดับของหนู
+                                <button onClick={() => startQuiz(currentLevel)} className="btn-3d py-4 bg-green-400 border-green-500 rounded-2xl text-white font-bold text-xl">
+                                    <i className="fas fa-redo"></i> เล่นอีก
                                 </button>
                             </div>
+                            <button onClick={fetchLeaderboard} className="btn-3d w-full py-4 mt-3 bg-blue-500 border-blue-600 rounded-2xl text-white font-bold text-xl">
+                                <i className="fas fa-trophy"></i> ดูอันดับเพื่อนๆ
+                            </button>
                         </div>
                     </div>
                 );
             };
+
+            const renderLeaderboard = () => (
+                <div className="flex flex-col items-center min-h-screen p-4 max-w-md mx-auto w-full">
+                    <div className="w-full flex items-center mb-6">
+                        <button onClick={() => setAppState('home')} className="w-12 h-12 bg-white text-gray-600 rounded-full font-bold text-xl btn-3d shadow-sm flex items-center justify-center">
+                            <i className="fas fa-arrow-left"></i>
+                        </button>
+                        <h1 className="text-3xl font-black text-gray-800 ml-4">จัดอันดับ 🏆</h1>
+                    </div>
+
+                    <div className="bg-white w-full rounded-[32px] shadow-lg p-2 flex flex-col border-b-8 border-gray-200 max-h-[75vh]">
+                        <div className="overflow-y-auto custom-scrollbar p-2 flex-grow">
+                            {leaderboardData.map((entry, idx) => {
+                                const isMe = entry.id === user?.uid;
+                                return (
+                                    <div key={entry.id} className={`flex items-center justify-between p-4 mb-3 rounded-2xl ${isMe ? 'bg-orange-100 border-2 border-orange-300' : 'bg-gray-50'}`}>
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-xl shadow-sm
+                                                ${idx === 0 ? 'bg-yellow-400 text-white text-2xl' : idx === 1 ? 'bg-gray-300 text-white' : idx === 2 ? 'bg-orange-400 text-white' : 'bg-white text-gray-500'}
+                                            `}>
+                                                {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className={`font-bold text-lg ${isMe ? 'text-orange-600' : 'text-gray-700'}`}>
+                                                    {entry.displayName}
+                                                </span>
+                                                {isMe && <span className="text-xs font-bold text-orange-400">นี่คือหนูเอง!</span>}
+                                            </div>
+                                        </div>
+                                        <div className="font-black text-2xl text-yellow-500 flex items-center gap-1">
+                                            {entry.totalScore} <i className="fas fa-star text-sm"></i>
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </div>
+            );
 
             return (
                 <div className="w-full min-h-screen text-gray-900">
@@ -787,7 +680,6 @@
                     {appState === 'quiz' && renderQuiz()}
                     {appState === 'result' && renderResult()}
                     {appState === 'leaderboard' && renderLeaderboard()}
-                    {appState === 'progress' && renderProgress()}
                 </div>
             );
         };
