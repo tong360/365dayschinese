@@ -98,7 +98,7 @@
 
         const App = () => {
             const [isFirebaseReady, setIsFirebaseReady] = React.useState(!!window.FirebaseAPI);
-            const [appState, setAppState] = React.useState('loading'); // loading, setup, home, learn, quiz, result, leaderboard, progress
+            const [appState, setAppState] = React.useState('loading'); // loading, home, learn, quiz, result, leaderboard, progress
             const [user, setUser] = React.useState(null);
             
             // ข้อมูลผู้ใช้
@@ -117,7 +117,6 @@
             const [score, setScore] = React.useState(0);
             const [isFlipped, setIsFlipped] = React.useState(false);
             const [quizQuestions, setQuizQuestions] = React.useState([]);
-            const [setupName, setSetupName] = React.useState("");
             
             // คนออนไลน์จำลอง
             const [onlineUsers, setOnlineUsers] = React.useState(15);
@@ -127,9 +126,28 @@
 
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'chinese-kids-app-v2';
 
-            // บันทึกสถานะปัจจุบันเสมอ ยกเว้นตอนกำลังโหลดหรือตั้งชื่อ เพื่อให้เวลารีเฟรชแล้วอยู่หน้าเดิม
+            // ปลดล็อกระบบเสียงสำหรับมือถือทันทีที่ผู้ใช้แตะหน้าจอครั้งแรก
             React.useEffect(() => {
-                if (appState !== 'loading' && appState !== 'setup') {
+                const unlockAudio = () => {
+                    if (!audioUnlocked && 'speechSynthesis' in window) {
+                        const u = new SpeechSynthesisUtterance('');
+                        window.speechSynthesis.speak(u);
+                        setAudioUnlocked(true);
+                        document.removeEventListener('touchstart', unlockAudio);
+                        document.removeEventListener('click', unlockAudio);
+                    }
+                };
+                document.addEventListener('touchstart', unlockAudio);
+                document.addEventListener('click', unlockAudio);
+                return () => {
+                    document.removeEventListener('touchstart', unlockAudio);
+                    document.removeEventListener('click', unlockAudio);
+                };
+            }, [audioUnlocked]);
+
+            // บันทึกสถานะปัจจุบันเสมอเพื่อให้เวลารีเฟรชแล้วอยู่หน้าเดิม
+            React.useEffect(() => {
+                if (appState !== 'loading') {
                     localStorage.setItem('chineseApp_savedState_v2', JSON.stringify({
                         appState, currentLevel, currentIndex, score, quizQuestions
                     }));
@@ -141,7 +159,7 @@
                 if (saved) {
                     try {
                         const parsed = JSON.parse(saved);
-                        if (parsed.appState && parsed.appState !== 'setup' && parsed.appState !== 'loading') {
+                        if (parsed.appState && parsed.appState !== 'loading') {
                             setCurrentLevel(parsed.currentLevel);
                             setCurrentIndex(parsed.currentIndex);
                             setScore(parsed.score);
@@ -173,21 +191,12 @@
                 };
             }, []);
 
-            // ฟังก์ชันปลดล็อกเสียงสำหรับมือถือ (ต้องเรียกผ่าน User Gesture เช่น การคลิก)
-            const unlockAudioContext = () => {
-                if (!audioUnlocked && 'speechSynthesis' in window) {
-                    const u = new SpeechSynthesisUtterance('');
-                    window.speechSynthesis.speak(u);
-                    setAudioUnlocked(true);
-                }
-            };
-
             React.useEffect(() => {
                 if (!isFirebaseReady) return;
                 
                 const initApp = async () => {
                     try {
-                        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence, onAuthStateChanged, getFirestore, doc, getDoc } = window.FirebaseAPI;
+                        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence, onAuthStateChanged, getFirestore, doc, getDoc, setDoc } = window.FirebaseAPI;
                         
                         let firebaseConfig = { projectId: "demo-project" };
                         if (typeof __firebase_config !== 'undefined') {
@@ -202,7 +211,7 @@
                         // บังคับจำค่าในเครื่อง (ไม่ให้ล็อกเอาท์)
                         await setPersistence(auth, browserLocalPersistence);
 
-                        // จัดการ Auth Flow อย่างรัดกุม
+                        // จัดการ Auth Flow อย่างรัดกุม ข้ามหน้า Login อัตโนมัติ
                         const checkUserAndFetchProfile = async (currentUser) => {
                             if (!currentUser) return;
                             setUser(currentUser);
@@ -216,11 +225,30 @@
                                     setProfile(data);
                                     restoreState(); // อ่านค่าจาก LocalStorage แล้วพาไปหน้าที่ค้างไว้
                                 } else {
-                                    setAppState('setup');
+                                    // สร้างโปรไฟล์ให้อัตโนมัติด้วยชื่อสุ่ม (ไม่มีหน้า Setup/Login)
+                                    const randomName = "นักเรียน_" + Math.floor(1000 + Math.random() * 9000);
+                                    const newProfile = {
+                                        displayName: randomName,
+                                        scores: { beginner: 0, intermediate: 0, advanced: 0 },
+                                        totalScore: 0,
+                                        learningHistory: { beginner: 0, intermediate: 0, advanced: 0 }
+                                    };
+                                    await setDoc(profileRef, newProfile);
+                                    setProfile(newProfile);
+                                    
+                                    // สร้างตารางคะแนนเริ่มต้น
+                                    const lbRef = doc(db, 'artifacts', appId, 'public', 'data', 'leaderboard', currentUser.uid);
+                                    await setDoc(lbRef, {
+                                        displayName: randomName,
+                                        totalScore: 0,
+                                        lastUpdated: Date.now()
+                                    });
+                                    
+                                    restoreState(); 
                                 }
                             } catch (e) {
                                 console.error("Profile fetch error", e);
-                                setAppState('setup');
+                                restoreState();
                             }
                         };
 
@@ -240,14 +268,13 @@
 
                     } catch (error) {
                         console.error("Firebase Init Error:", error);
-                        setAppState('setup'); 
+                        restoreState();
                     }
                 };
                 initApp();
             }, [isFirebaseReady]);
 
             const playAudio = (text) => {
-                unlockAudioContext(); // ปลดล็อกทุกครั้งที่พยายามเล่น เผื่อพลาด
                 if ('speechSynthesis' in window) {
                     window.speechSynthesis.cancel(); 
                     const utterance = new SpeechSynthesisUtterance(text);
@@ -284,7 +311,6 @@
             };
 
             const fetchLeaderboard = async () => {
-                unlockAudioContext();
                 if (!dbInstance) return;
                 setAppState('leaderboard');
                 try {
@@ -315,17 +341,15 @@
                 }
             };
 
-            const handleSetupSubmit = (e) => {
-                e.preventDefault();
-                unlockAudioContext(); // ปลดล็อกเสียงทันทีที่กดตกลง
-                if (!setupName.trim()) return;
-                const newProfile = { ...profile, displayName: setupName.trim() };
-                saveProfile(newProfile);
-                setAppState('home');
+            const handleRename = () => {
+                const newName = prompt("ตั้งชื่อเล่นใหม่ของคุณ (ไม่เกิน 15 ตัวอักษร):", profile.displayName);
+                if (newName && newName.trim() !== "" && newName.trim() !== profile.displayName) {
+                    const newProfile = { ...profile, displayName: newName.trim().substring(0, 15) };
+                    saveProfile(newProfile);
+                }
             };
 
             const startLearning = (level) => {
-                unlockAudioContext();
                 setCurrentLevel(level);
                 setCurrentIndex(0);
                 setIsFlipped(false);
@@ -341,7 +365,6 @@
             };
 
             const startQuiz = (level) => {
-                unlockAudioContext();
                 const words = VOCAB_DATA[level].words;
                 const shuffled = [...words].sort(() => 0.5 - Math.random());
                 const selected = shuffled.slice(0, 5); 
@@ -391,46 +414,17 @@
                 );
             }
 
-            if (appState === 'setup') {
-                return (
-                    <div className="flex flex-col items-center justify-center min-h-screen p-4" onClick={unlockAudioContext}>
-                        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border-t-8 border-yellow-400 text-center transform transition-all hover:scale-105">
-                            <h1 className="text-5xl mb-4 animate-bounce-slow">👋</h1>
-                            <h2 className="text-3xl font-bold text-gray-800 mb-2">ยินดีต้อนรับ!</h2>
-                            <p className="text-gray-600 mb-6 text-md leading-relaxed">
-                                มาตั้งชื่อเล่นสำหรับแข่งขันกันเถอะ<br/>
-                                <span className="text-sm text-blue-500 bg-blue-50 px-3 py-1 rounded-full mt-2 inline-block">
-                                    <i className="fas fa-lock"></i> ระบบจะจำชื่อหนูไว้ในเครื่องอัตโนมัติ
-                                </span>
-                            </p>
-                            <form onSubmit={handleSetupSubmit} className="flex flex-col gap-4">
-                                <input 
-                                    type="text" 
-                                    value={setupName}
-                                    onChange={(e) => setSetupName(e.target.value)}
-                                    placeholder="ใส่ชื่อเล่นของหนู"
-                                    maxLength="15"
-                                    required
-                                    className="px-6 py-4 rounded-2xl bg-gray-50 border-2 border-gray-200 text-xl font-medium text-center focus:outline-none focus:border-red-400 focus:bg-white transition"
-                                />
-                                <button type="submit" className="py-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-2xl shadow-md text-xl transition flex justify-center items-center gap-2">
-                                    <i className="fas fa-rocket"></i> เริ่มเรียนกันเลย!
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                );
-            }
-
             const renderHome = () => (
-                <div className="flex flex-col items-center justify-center min-h-screen p-4 py-10" onClick={unlockAudioContext}>
+                <div className="flex flex-col items-center justify-center min-h-screen p-4 py-10">
                     <div className="w-full max-w-4xl flex justify-between items-center bg-white p-4 rounded-3xl shadow-md mb-8 flex-wrap gap-4">
                         <div className="flex items-center gap-3">
                             <div className="w-12 h-12 bg-orange-100 text-orange-500 rounded-full flex justify-center items-center text-2xl font-bold border-2 border-orange-200">
                                 {profile.displayName.charAt(0) || "👤"}
                             </div>
                             <div>
-                                <h3 className="font-bold text-gray-800">{profile.displayName}</h3>
+                                <h3 className="font-bold text-gray-800 flex items-center gap-2 cursor-pointer hover:text-blue-500 transition" onClick={handleRename} title="คลิกเพื่อเปลี่ยนชื่อ">
+                                    {profile.displayName} <i className="fas fa-pencil-alt text-xs text-gray-400"></i>
+                                </h3>
                                 <div className="flex items-center gap-2 text-xs mt-1">
                                     <span className="flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-full font-medium border border-green-100">
                                         <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
@@ -445,7 +439,7 @@
                                 <span className="font-bold text-yellow-700 text-lg">รวม: {profile.totalScore} คะแนน</span>
                             </div>
                             <button 
-                                onClick={() => { unlockAudioContext(); setAppState('progress'); }}
+                                onClick={() => setAppState('progress')}
                                 className="bg-green-500 hover:bg-green-600 text-white p-3 rounded-xl shadow transition flex items-center gap-2 font-medium">
                                 <i className="fas fa-chart-bar"></i> <span className="hidden sm:inline">ความคืบหน้า</span>
                             </button>
@@ -454,7 +448,6 @@
                                 className="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl shadow transition flex items-center gap-2 font-medium">
                                 <i className="fas fa-trophy"></i> <span className="hidden sm:inline">จัดอันดับ</span>
                             </button>
-                            {/* ไม่มีปุ่ม Logout เพื่อให้ล็อคเครื่องผู้เล่นตามที่ขอ */}
                         </div>
                     </div>
 
