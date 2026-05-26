@@ -21,6 +21,8 @@
             margin: 0;
             padding: 0;
             min-height: 100vh;
+            /* Prevent pull-to-refresh on mobile */
+            overscroll-behavior-y: contain; 
         }
         .flip-card { perspective: 1000px; }
         .flip-card-inner {
@@ -48,20 +50,19 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // นำเข้าเฉพาะสิ่งที่จำเป็น ตัด signOut ออกเพราะเราจะไม่ให้ผู้เล่นล็อกเอาท์ (จำค่าเครื่อง)
+        import { getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Expose Firebase API to window so Babel script can use it
         window.FirebaseAPI = {
-            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, signOut, setPersistence, browserLocalPersistence,
-            getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, onSnapshot
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence, onAuthStateChanged,
+            getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs
         };
-        // Notify React that Firebase is ready
         window.dispatchEvent(new Event('firebase-ready'));
     </script>
 
     <script type="text/babel">
-        // Vocabulary data structure
+        // ข้อมูลคำศัพท์
         const VOCAB_DATA = {
             beginner: {
                 title: "ขั้นต้น (ป.4)", color: "from-green-400 to-emerald-500", icon: "🌱",
@@ -97,10 +98,10 @@
 
         const App = () => {
             const [isFirebaseReady, setIsFirebaseReady] = React.useState(!!window.FirebaseAPI);
-            const [appState, setAppState] = React.useState('loading'); // loading, setup, home, learn, quiz, result, leaderboard, progress, confirmLogout
+            const [appState, setAppState] = React.useState('loading'); // loading, setup, home, learn, quiz, result, leaderboard, progress
             const [user, setUser] = React.useState(null);
             
-            // Profile state to store user's display name and scores
+            // ข้อมูลผู้ใช้
             const [profile, setProfile] = React.useState({ 
                 displayName: '', 
                 scores: { beginner: 0, intermediate: 0, advanced: 0 }, 
@@ -110,7 +111,7 @@
             const [leaderboardData, setLeaderboardData] = React.useState([]);
             const [dbInstance, setDbInstance] = React.useState(null);
             
-            // Learning and Quiz state
+            // สถานะเกมและการเรียน
             const [currentLevel, setCurrentLevel] = React.useState(null);
             const [currentIndex, setCurrentIndex] = React.useState(0);
             const [score, setScore] = React.useState(0);
@@ -118,22 +119,25 @@
             const [quizQuestions, setQuizQuestions] = React.useState([]);
             const [setupName, setSetupName] = React.useState("");
             
-            // Online users simulation (10-99 users)
+            // คนออนไลน์จำลอง
             const [onlineUsers, setOnlineUsers] = React.useState(15);
+            
+            // สถานะปลดล็อกเสียง
+            const [audioUnlocked, setAudioUnlocked] = React.useState(false);
 
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'chinese-kids-app-v1';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'chinese-kids-app-v2';
 
-            // --- 1. ระบบจดจำสถานะหน้าเว็บเมื่อรีเฟรช (State Persistence) ---
+            // บันทึกสถานะปัจจุบันเสมอ ยกเว้นตอนกำลังโหลดหรือตั้งชื่อ เพื่อให้เวลารีเฟรชแล้วอยู่หน้าเดิม
             React.useEffect(() => {
                 if (appState !== 'loading' && appState !== 'setup') {
-                    localStorage.setItem('chineseApp_savedState', JSON.stringify({
+                    localStorage.setItem('chineseApp_savedState_v2', JSON.stringify({
                         appState, currentLevel, currentIndex, score, quizQuestions
                     }));
                 }
             }, [appState, currentLevel, currentIndex, score, quizQuestions]);
 
             const restoreState = () => {
-                const saved = localStorage.getItem('chineseApp_savedState');
+                const saved = localStorage.getItem('chineseApp_savedState_v2');
                 if (saved) {
                     try {
                         const parsed = JSON.parse(saved);
@@ -147,50 +151,43 @@
                         }
                     } catch(e) { console.error("Restore state error", e); }
                 }
-                setAppState('home'); // หากไม่มีข้อมูลที่เซฟไว้ ให้กลับหน้าหลัก
+                setAppState('home'); 
             };
-            // -----------------------------------------------------------
 
             React.useEffect(() => {
                 const handleReady = () => setIsFirebaseReady(true);
                 window.addEventListener('firebase-ready', handleReady);
                 
-                // --- Mobile Audio Fix ---
-                // ปลดล็อกระบบเสียงในมือถือ (iOS/Safari) เมื่อแตะหน้าจอครั้งแรก
-                const unlockAudio = () => {
-                    if ('speechSynthesis' in window) {
-                        const u = new SpeechSynthesisUtterance('');
-                        window.speechSynthesis.speak(u);
-                    }
-                    document.removeEventListener('touchstart', unlockAudio);
-                    document.removeEventListener('click', unlockAudio);
-                };
-                document.addEventListener('touchstart', unlockAudio);
-                document.addEventListener('click', unlockAudio);
-                
-                // Initialize random online users count (10-99)
-                setOnlineUsers(Math.floor(Math.random() * 80) + 10);
+                // ระบบสุ่มคนออนไลน์หลัก 10 คน
+                setOnlineUsers(Math.floor(Math.random() * 80) + 15);
                 const interval = setInterval(() => {
                     setOnlineUsers(prev => {
-                        const change = Math.floor(Math.random() * 7) - 3; // -3 to +3
-                        return Math.max(10, Math.min(99, prev + change));
+                        const change = Math.floor(Math.random() * 5) - 2; 
+                        return Math.max(12, Math.min(99, prev + change));
                     });
-                }, 5000);
+                }, 8000);
                 
                 return () => {
                     window.removeEventListener('firebase-ready', handleReady);
-                    document.removeEventListener('touchstart', unlockAudio);
-                    document.removeEventListener('click', unlockAudio);
                     clearInterval(interval);
                 };
             }, []);
+
+            // ฟังก์ชันปลดล็อกเสียงสำหรับมือถือ (ต้องเรียกผ่าน User Gesture เช่น การคลิก)
+            const unlockAudioContext = () => {
+                if (!audioUnlocked && 'speechSynthesis' in window) {
+                    const u = new SpeechSynthesisUtterance('');
+                    window.speechSynthesis.speak(u);
+                    setAudioUnlocked(true);
+                }
+            };
 
             React.useEffect(() => {
                 if (!isFirebaseReady) return;
                 
                 const initApp = async () => {
                     try {
-                        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence, getFirestore, doc, getDoc } = window.FirebaseAPI;
+                        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence, onAuthStateChanged, getFirestore, doc, getDoc } = window.FirebaseAPI;
                         
                         let firebaseConfig = { projectId: "demo-project" };
                         if (typeof __firebase_config !== 'undefined') {
@@ -202,35 +199,45 @@
                         const db = getFirestore(app);
                         setDbInstance(db);
 
-                        // บังคับให้ระบบจำการล็อกอินไว้ในเครื่อง (Local Persistence)
+                        // บังคับจำค่าในเครื่อง (ไม่ให้ล็อกเอาท์)
                         await setPersistence(auth, browserLocalPersistence);
 
-                        // Authenticate the user
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                        
-                        const currentUser = auth.currentUser;
-                        if (!currentUser) throw new Error("Auth failed");
-                        setUser(currentUser);
-
-                        // Fetch User Profile from Firestore
-                        const profileRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'main');
-                        const profileSnap = await getDoc(profileRef);
-                        
-                        if (profileSnap.exists()) {
-                            const data = profileSnap.data();
-                            if(!data.learningHistory) {
-                                data.learningHistory = { beginner: 0, intermediate: 0, advanced: 0 };
+                        // จัดการ Auth Flow อย่างรัดกุม
+                        const checkUserAndFetchProfile = async (currentUser) => {
+                            if (!currentUser) return;
+                            setUser(currentUser);
+                            try {
+                                const profileRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'main');
+                                const profileSnap = await getDoc(profileRef);
+                                
+                                if (profileSnap.exists()) {
+                                    const data = profileSnap.data();
+                                    if(!data.learningHistory) data.learningHistory = { beginner: 0, intermediate: 0, advanced: 0 };
+                                    setProfile(data);
+                                    restoreState(); // อ่านค่าจาก LocalStorage แล้วพาไปหน้าที่ค้างไว้
+                                } else {
+                                    setAppState('setup');
+                                }
+                            } catch (e) {
+                                console.error("Profile fetch error", e);
+                                setAppState('setup');
                             }
-                            setProfile(data);
-                            restoreState(); // เรียกใช้ฟังก์ชันคืนค่าหน้าจอเดิม แทนที่จะกลับไปที่ 'home' เสมอ
-                        } else {
-                            // New user needs setup
-                            setAppState('setup');
-                        }
+                        };
+
+                        // ใช้ onAuthStateChanged เพื่อจับสถานะการล็อกอินที่แม่นยำ
+                        onAuthStateChanged(auth, async (currentUser) => {
+                            if (currentUser) {
+                                await checkUserAndFetchProfile(currentUser);
+                            } else {
+                                // ถ้าไม่มี User ให้สร้างใหม่แบบ Anonymous
+                                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                    await signInWithCustomToken(auth, __initial_auth_token);
+                                } else {
+                                    await signInAnonymously(auth);
+                                }
+                            }
+                        });
+
                     } catch (error) {
                         console.error("Firebase Init Error:", error);
                         setAppState('setup'); 
@@ -240,11 +247,11 @@
             }, [isFirebaseReady]);
 
             const playAudio = (text) => {
+                unlockAudioContext(); // ปลดล็อกทุกครั้งที่พยายามเล่น เผื่อพลาด
                 if ('speechSynthesis' in window) {
-                    window.speechSynthesis.cancel(); // ล้างคิวเสียงเก่าทิ้ง เพื่อไม่ให้เสียงค้าง
+                    window.speechSynthesis.cancel(); 
                     const utterance = new SpeechSynthesisUtterance(text);
                     utterance.lang = 'zh-CN';
-                    // ปรับความเร็วเสียงให้ช้าลงเล็กน้อยในมือถือ เพื่อให้เด็กๆ ฟังชัดขึ้น
                     utterance.rate = window.innerWidth < 768 ? 0.75 : 0.85; 
                     
                     const voices = window.speechSynthesis.getVoices();
@@ -252,22 +259,19 @@
                         const zhVoice = voices.find(v => v.lang === 'zh-CN' || v.lang.includes('zh') || v.lang.includes('ZH'));
                         if (zhVoice) utterance.voice = zhVoice;
                     }
-                    
                     window.speechSynthesis.speak(utterance);
                 }
             };
 
             const saveProfile = async (newProfile) => {
-                setProfile(newProfile); // Update state optimistically
+                setProfile(newProfile); 
                 if (!user || !dbInstance) return;
                 
                 try {
                     const { doc, setDoc } = window.FirebaseAPI;
-                    // Save Private Profile
                     const profileRef = doc(dbInstance, 'artifacts', appId, 'users', user.uid, 'profile', 'main');
                     await setDoc(profileRef, newProfile);
                     
-                    // Save Public Leaderboard Entry
                     const lbRef = doc(dbInstance, 'artifacts', appId, 'public', 'data', 'leaderboard', user.uid);
                     await setDoc(lbRef, {
                         displayName: newProfile.displayName,
@@ -280,6 +284,7 @@
             };
 
             const fetchLeaderboard = async () => {
+                unlockAudioContext();
                 if (!dbInstance) return;
                 setAppState('leaderboard');
                 try {
@@ -287,13 +292,13 @@
                     const lbCol = collection(dbInstance, 'artifacts', appId, 'public', 'data', 'leaderboard');
                     const snapshot = await getDocs(lbCol);
                     
-                    // ข้อมูลจำลองเพื่อกระตุ้นการแข่งขัน (คะแนนเต็มรวม 3 ด่านคือ 15 คะแนน)
+                    // ระบบแข่งขัน Mock Data เพื่อความท้าทาย
                     const mockData = [
                         { id: 'mock1', displayName: 'เซียนภาษาจีน 🐉', totalScore: 15 },
                         { id: 'mock2', displayName: 'น้องเหมยลี่ 🌸', totalScore: 14 },
-                        { id: 'mock3', displayName: 'อาตี๋น้อย 👦', totalScore: 12 },
-                        { id: 'mock4', displayName: 'แพนด้าอ้วน 🐼', totalScore: 9 },
-                        { id: 'mock5', displayName: 'เสี่ยวหง 🍎', totalScore: 5 }
+                        { id: 'mock3', displayName: 'อาตี๋น้อย 👦', totalScore: 11 },
+                        { id: 'mock4', displayName: 'แพนด้าอ้วน 🐼', totalScore: 8 },
+                        { id: 'mock5', displayName: 'เสี่ยวหง 🍎', totalScore: 4 }
                     ];
                     
                     const list = [...mockData];
@@ -309,11 +314,10 @@
                     console.error("Fetch leaderboard error:", error);
                 }
             };
-            
-            // นำฟังก์ชัน handleLogout ออก เพื่อป้องกันการเปลี่ยนผู้เล่นตามที่ร้องขอ
 
             const handleSetupSubmit = (e) => {
                 e.preventDefault();
+                unlockAudioContext(); // ปลดล็อกเสียงทันทีที่กดตกลง
                 if (!setupName.trim()) return;
                 const newProfile = { ...profile, displayName: setupName.trim() };
                 saveProfile(newProfile);
@@ -321,6 +325,7 @@
             };
 
             const startLearning = (level) => {
+                unlockAudioContext();
                 setCurrentLevel(level);
                 setCurrentIndex(0);
                 setIsFlipped(false);
@@ -336,6 +341,7 @@
             };
 
             const startQuiz = (level) => {
+                unlockAudioContext();
                 const words = VOCAB_DATA[level].words;
                 const shuffled = [...words].sort(() => 0.5 - Math.random());
                 const selected = shuffled.slice(0, 5); 
@@ -387,14 +393,14 @@
 
             if (appState === 'setup') {
                 return (
-                    <div className="flex flex-col items-center justify-center min-h-screen p-4">
+                    <div className="flex flex-col items-center justify-center min-h-screen p-4" onClick={unlockAudioContext}>
                         <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border-t-8 border-yellow-400 text-center transform transition-all hover:scale-105">
-                            <h1 className="text-5xl mb-4">👋</h1>
+                            <h1 className="text-5xl mb-4 animate-bounce-slow">👋</h1>
                             <h2 className="text-3xl font-bold text-gray-800 mb-2">ยินดีต้อนรับ!</h2>
-                            <p className="text-gray-600 mb-6 text-md">
+                            <p className="text-gray-600 mb-6 text-md leading-relaxed">
                                 มาตั้งชื่อเล่นสำหรับแข่งขันกันเถอะ<br/>
                                 <span className="text-sm text-blue-500 bg-blue-50 px-3 py-1 rounded-full mt-2 inline-block">
-                                    <i className="fas fa-save"></i> ระบบจะจำชื่อนี้ไว้ในเครื่องอัตโนมัติ
+                                    <i className="fas fa-lock"></i> ระบบจะจำชื่อหนูไว้ในเครื่องอัตโนมัติ
                                 </span>
                             </p>
                             <form onSubmit={handleSetupSubmit} className="flex flex-col gap-4">
@@ -416,10 +422,8 @@
                 );
             }
 
-            // นำหน้าจอ appState === 'confirmLogout' ออก เพื่อป้องกันการเปลี่ยนผู้เล่น
-
             const renderHome = () => (
-                <div className="flex flex-col items-center justify-center min-h-screen p-4 py-10">
+                <div className="flex flex-col items-center justify-center min-h-screen p-4 py-10" onClick={unlockAudioContext}>
                     <div className="w-full max-w-4xl flex justify-between items-center bg-white p-4 rounded-3xl shadow-md mb-8 flex-wrap gap-4">
                         <div className="flex items-center gap-3">
                             <div className="w-12 h-12 bg-orange-100 text-orange-500 rounded-full flex justify-center items-center text-2xl font-bold border-2 border-orange-200">
@@ -441,7 +445,7 @@
                                 <span className="font-bold text-yellow-700 text-lg">รวม: {profile.totalScore} คะแนน</span>
                             </div>
                             <button 
-                                onClick={() => setAppState('progress')}
+                                onClick={() => { unlockAudioContext(); setAppState('progress'); }}
                                 className="bg-green-500 hover:bg-green-600 text-white p-3 rounded-xl shadow transition flex items-center gap-2 font-medium">
                                 <i className="fas fa-chart-bar"></i> <span className="hidden sm:inline">ความคืบหน้า</span>
                             </button>
@@ -450,7 +454,7 @@
                                 className="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl shadow transition flex items-center gap-2 font-medium">
                                 <i className="fas fa-trophy"></i> <span className="hidden sm:inline">จัดอันดับ</span>
                             </button>
-                            {/* นำปุ่ม เปลี่ยนผู้เล่น ออกจากหน้าจอหลัก */}
+                            {/* ไม่มีปุ่ม Logout เพื่อให้ล็อคเครื่องผู้เล่นตามที่ขอ */}
                         </div>
                     </div>
 
@@ -488,8 +492,8 @@
                                                 <span className="text-sm text-gray-500">เรียนไปแล้ว:</span>
                                                 <span className="text-sm font-bold text-gray-700">{progressPercent}%</span>
                                             </div>
-                                            <div className="w-full bg-gray-200 rounded-full h-2">
-                                                <div className="bg-green-500 h-2 rounded-full" style={{ width: `${progressPercent}%` }}></div>
+                                            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                                                <div className="bg-green-500 h-2 rounded-full transition-all duration-1000" style={{ width: `${progressPercent}%` }}></div>
                                             </div>
                                         </div>
                                         <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl mb-2">
@@ -530,8 +534,11 @@
 
                     <div className="bg-white w-full rounded-3xl shadow-xl p-8 mb-6 border-t-8 border-green-400">
                         <div className="text-center mb-6">
-                            <h2 className="text-xl font-bold text-gray-600">สถิติของ {profile.displayName}</h2>
-                            <p className="text-gray-500">มาดูกันว่าหนูเรียนไปถึงไหนแล้ว!</p>
+                            <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex justify-center items-center text-4xl mx-auto mb-4 border-4 border-green-200">
+                                📈
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-800">สถิติของ {profile.displayName}</h2>
+                            <p className="text-gray-500">มาดูกันว่าหนูเรียนไปถึงไหนแล้ว พยายามเข้านะ!</p>
                         </div>
 
                         <div className="grid gap-6">
@@ -553,8 +560,8 @@
                                             <span>เรียนรู้คำศัพท์ไปแล้ว</span>
                                             <span>{wordsLearned} / {totalWords} คำ ({progressPercent}%)</span>
                                         </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-3">
-                                            <div className="bg-green-500 h-3 rounded-full" style={{ width: `${progressPercent}%` }}></div>
+                                        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                            <div className="bg-gradient-to-r from-green-400 to-green-500 h-3 rounded-full transition-all duration-1000" style={{ width: `${progressPercent}%` }}></div>
                                         </div>
                                     </div>
                                 );
@@ -590,7 +597,7 @@
                                 </div>
                             ) : (
                                 leaderboardData.map((entry, idx) => (
-                                    <div key={entry.id} className={`flex items-center justify-between p-4 mb-2 rounded-2xl ${idx === 0 ? 'bg-yellow-50 border border-yellow-200 shadow-sm' : idx === 1 ? 'bg-gray-50 border border-gray-200' : idx === 2 ? 'bg-orange-50 border border-orange-100' : 'bg-white hover:bg-gray-50'}`}>
+                                    <div key={entry.id} className={`flex items-center justify-between p-4 mb-2 rounded-2xl ${idx === 0 ? 'bg-yellow-50 border border-yellow-200 shadow-sm transform scale-100 hover:scale-105 transition' : idx === 1 ? 'bg-gray-50 border border-gray-200' : idx === 2 ? 'bg-orange-50 border border-orange-100' : 'bg-white hover:bg-gray-50'}`}>
                                         <div className="flex items-center gap-4">
                                             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shadow-sm
                                                 ${idx === 0 ? 'bg-yellow-400 text-yellow-900' : idx === 1 ? 'bg-gray-300 text-gray-800' : idx === 2 ? 'bg-orange-300 text-orange-900' : 'bg-blue-100 text-blue-800'}
@@ -622,7 +629,7 @@
                             <button onClick={() => setAppState('home')} className="p-4 bg-white rounded-full shadow-md text-gray-600 hover:text-red-500 transition">
                                 <i className="fas fa-home text-xl"></i>
                             </button>
-                            <div className="text-lg font-bold text-gray-700 bg-white px-4 py-2 rounded-full shadow-sm">
+                            <div className="text-lg font-bold text-gray-700 bg-white px-4 py-2 rounded-full shadow-sm border border-gray-100">
                                 คำที่ {currentIndex + 1} / {words.length}
                             </div>
                             <div className="w-12"></div>
@@ -635,8 +642,8 @@
                             <div className="flip-card-inner w-full h-full relative">
                                 <div className="flip-card-front absolute w-full h-full bg-white rounded-3xl shadow-xl flex flex-col items-center justify-center p-6 border-8 border-yellow-300">
                                     <h1 className="text-8xl font-bold text-red-600 mb-6">{word.ch}</h1>
-                                    <p className="text-gray-500 text-lg flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-full">
-                                        <i className="fas fa-hand-pointer"></i> แตะเพื่อดูคำแปล
+                                    <p className="text-gray-500 text-lg flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-full border border-gray-100">
+                                        <i className="fas fa-hand-pointer text-yellow-500 animate-pulse"></i> แตะเพื่อดูคำแปล
                                     </p>
                                 </div>
                                 <div className="flip-card-back absolute w-full h-full bg-red-50 rounded-3xl shadow-xl flex flex-col items-center justify-center p-6 border-8 border-red-400">
@@ -667,7 +674,7 @@
                                 onClick={(e) => { e.stopPropagation(); playAudio(word.ch); }}
                                 className="p-6 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-lg transition transform hover:scale-110 flex flex-col items-center pulse-soft relative">
                                 <i className="fas fa-volume-up text-3xl"></i>
-                                <span className="absolute -top-2 -right-2 bg-yellow-400 text-xs font-bold px-2 py-1 rounded-full text-yellow-900 shadow">ฟังเสียง</span>
+                                <span className="absolute -top-2 -right-2 bg-yellow-400 text-xs font-bold px-2 py-1 rounded-full text-yellow-900 shadow border border-yellow-200">ฟังเสียง</span>
                             </button>
 
                             <button 
@@ -687,7 +694,7 @@
                         </div>
                         
                         {currentIndex === words.length - 1 && (
-                            <button onClick={() => startQuiz(currentLevel)} className="w-full py-4 bg-blue-500 hover:bg-blue-600 text-white font-bold text-xl rounded-2xl shadow-lg transition flex justify-center items-center gap-2 animate-bounce">
+                            <button onClick={() => startQuiz(currentLevel)} className="w-full py-4 bg-blue-500 hover:bg-blue-600 text-white font-bold text-xl rounded-2xl shadow-lg transition flex justify-center items-center gap-2 animate-bounce mt-4">
                                 <i className="fas fa-gamepad"></i> ลองทำแบบทดสอบเลย!
                             </button>
                         )}
@@ -704,21 +711,21 @@
                             <button onClick={() => setAppState('home')} className="p-4 bg-white rounded-full shadow-md text-gray-600 hover:text-red-500 transition">
                                 <i className="fas fa-times text-xl"></i>
                             </button>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 bg-white px-4 py-2 rounded-full shadow-sm">
                                 {quizQuestions.map((_, idx) => (
-                                    <div key={idx} className={`w-3 h-3 rounded-full ${idx < currentIndex ? 'bg-green-400' : idx === currentIndex ? 'bg-blue-500 scale-125' : 'bg-gray-300'}`} />
+                                    <div key={idx} className={`w-3 h-3 rounded-full transition-all ${idx < currentIndex ? 'bg-green-400' : idx === currentIndex ? 'bg-blue-500 scale-125' : 'bg-gray-200'}`} />
                                 ))}
                             </div>
-                            <div className="w-12 font-bold text-gray-500 text-right">{currentIndex + 1}/{quizQuestions.length}</div>
+                            <div className="w-12 font-bold text-gray-500 text-right bg-white px-3 py-2 rounded-xl shadow-sm">{currentIndex + 1}/{quizQuestions.length}</div>
                         </div>
 
                         <div className="bg-white w-full rounded-3xl shadow-xl p-8 mb-8 flex flex-col items-center text-center border-t-8 border-blue-500 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 p-4 opacity-10"><i className="fas fa-brain text-6xl"></i></div>
-                            <h2 className="text-gray-500 text-lg mb-2 relative z-10">คำนี้แปลว่าอะไร?</h2>
+                            <div className="absolute top-0 right-0 p-4 opacity-5"><i className="fas fa-brain text-6xl"></i></div>
+                            <h2 className="text-gray-500 text-lg mb-2 relative z-10 font-medium">คำนี้แปลว่าอะไร?</h2>
                             <h1 className="text-7xl font-bold text-red-600 mb-6 relative z-10">{question.ch}</h1>
                             <button 
                                 onClick={() => playAudio(question.ch)}
-                                className="px-5 py-3 bg-blue-50 text-blue-600 font-medium rounded-full hover:bg-blue-100 flex items-center gap-2 transition relative z-10">
+                                className="px-5 py-3 bg-blue-50 text-blue-600 font-medium rounded-full hover:bg-blue-100 flex items-center gap-2 transition relative z-10 shadow-sm">
                                 <i className="fas fa-volume-up"></i> ฟังเสียงอีกครั้ง
                             </button>
                         </div>
@@ -728,9 +735,9 @@
                                 <button 
                                     key={idx}
                                     onClick={() => handleAnswer(opt)}
-                                    className="w-full py-4 px-6 bg-white hover:bg-blue-50 hover:border-blue-300 border-2 border-gray-100 text-gray-800 font-bold text-xl rounded-2xl shadow-sm transition transform hover:-translate-y-1 text-left flex justify-between items-center group">
+                                    className="w-full py-4 px-6 bg-white hover:bg-blue-50 hover:border-blue-400 border-2 border-gray-100 text-gray-800 font-bold text-xl rounded-2xl shadow-sm transition transform hover:-translate-y-1 text-left flex justify-between items-center group">
                                     <span>{opt}</span>
-                                    <div className="w-6 h-6 rounded-full border-2 border-gray-300 group-hover:border-blue-400"></div>
+                                    <div className="w-6 h-6 rounded-full border-2 border-gray-300 group-hover:border-blue-400 transition-colors"></div>
                                 </button>
                             ))}
                         </div>
@@ -753,7 +760,7 @@
                             </h1>
                             <p className="text-lg text-gray-500 mb-6">คะแนนที่หนูทำได้ในรอบนี้</p>
                             
-                            <div className="flex items-end justify-center gap-2 mb-10">
+                            <div className="flex items-end justify-center gap-2 mb-10 bg-gray-50 px-8 py-4 rounded-3xl border border-gray-100">
                                 <span className={`text-7xl font-black ${isPerfect ? 'text-yellow-500' : isGood ? 'text-green-500' : 'text-orange-500'}`}>{score}</span>
                                 <span className="text-4xl font-bold text-gray-300 mb-2">/ {quizQuestions.length}</span>
                             </div>
@@ -788,7 +795,6 @@
                     {appState === 'result' && renderResult()}
                     {appState === 'leaderboard' && renderLeaderboard()}
                     {appState === 'progress' && renderProgress()}
-                    {/* ลบการแสดงผลหน้า Logout ออก */}
                 </div>
             );
         };
