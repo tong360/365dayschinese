@@ -466,6 +466,10 @@
         let botTimer = null;
         let roundActive = false;
 
+        // Speech System State Management
+        let isRecognizing = false;
+        let activeRecognition = null;
+
         const screens = {
             home: document.getElementById('screen-home'),
             lesson: document.getElementById('screen-lesson'),
@@ -553,6 +557,9 @@
 
         function goToHome() {
             clearTimeout(botTimer);
+            if(isRecognizing && activeRecognition) {
+                activeRecognition.abort();
+            }
             initHome();
             switchScreen('home');
         }
@@ -601,6 +608,11 @@
         window.handleCorrectAnswer = function(isSkipped = false) {
             if (isCurrentWordPassed) return;
             isCurrentWordPassed = true;
+            
+            // ปิดไมค์ถ้ากำลังทำงานอยู่
+            if (isRecognizing && activeRecognition) {
+                activeRecognition.abort();
+            }
             
             const reward = isSkipped ? 5 : 10;
             starsEarnedThisSession += reward;
@@ -748,6 +760,10 @@
                 }
             }
             
+            updateScoreAndNext();
+        }
+        
+        function updateScoreAndNext(){
             updateVersusScore();
             setTimeout(nextVersusRound, 1500);
         }
@@ -824,6 +840,11 @@
                 
             if(!word) return;
 
+            // แก้บั๊ก: ตัดการฟังเสียง (ไมค์) ทิ้งทันทีหากผู้ใช้กดฟังเสียง (ลำโพง) ป้องกันเสียงตีกัน
+            if (isRecognizing && activeRecognition) {
+                activeRecognition.abort();
+            }
+
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(word);
@@ -853,6 +874,17 @@
         window.startSpeaking = function() {
             if (isCurrentWordPassed || currentMode !== 'lesson') return;
 
+            // แก้บั๊ก: ตัดเสียง AI ทิ้งทันทีก่อนเปิดไมค์ ป้องกันไมค์ดึงเสียงจากลำโพงเข้าไป
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+
+            // แก้บั๊ก: ถ้าระบบกำลังฟังอยู่ ให้กดยกเลิกได้ (ป้องกันการกดรัวๆ จนบราวเซอร์ค้าง)
+            if (isRecognizing) {
+                if(activeRecognition) activeRecognition.abort();
+                return; 
+            }
+
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
                 showSpeechToast('😔', 'เบราว์เซอร์ไม่รองรับ', 'อุปกรณ์นี้ไม่รองรับระบบเสียง (ระบบจะข้ามคำนี้ให้เพื่อทำการทดสอบ)');
@@ -863,26 +895,28 @@
                 return;
             }
 
-            const recognition = new SpeechRecognition();
-            recognition.lang = 'zh-CN';
-            recognition.interimResults = false;
-            recognition.maxAlternatives = 1;
+            // สร้าง Instance ใหม่ทุกครั้ง ป้องกันปัญหา Invalid State ในเบราว์เซอร์
+            activeRecognition = new SpeechRecognition();
+            activeRecognition.lang = 'zh-CN';
+            activeRecognition.interimResults = false;
+            activeRecognition.maxAlternatives = 1;
 
             const indicator = document.getElementById('listeningIndicator');
             const btnSpeak = document.getElementById('btnSpeak');
             const textBtnSpeak = document.getElementById('textBtnSpeak');
             
-            indicator.classList.remove('hidden');
-            
-            // เปลี่ยนสไตล์ปุ่มไมค์ระหว่างฟังเสียง ให้เป็นสีแดง (Rose) เพื่อให้เด็กรู้ตัว
-            btnSpeak.classList.replace('bg-orange-100', 'bg-rose-100');
-            btnSpeak.classList.replace('border-orange-300', 'border-rose-400');
-            btnSpeak.classList.replace('text-orange-600', 'text-rose-600');
-            textBtnSpeak.innerText = 'กำลังฟัง...';
+            activeRecognition.onstart = function() {
+                isRecognizing = true;
+                indicator.classList.remove('hidden');
+                
+                // เปลี่ยนสไตล์ปุ่มไมค์ระหว่างฟังเสียง ให้เป็นสีแดง (Rose) เพื่อให้เด็กรู้ตัว
+                btnSpeak.classList.replace('bg-orange-100', 'bg-rose-100');
+                btnSpeak.classList.replace('border-orange-300', 'border-rose-400');
+                btnSpeak.classList.replace('text-orange-600', 'text-rose-600');
+                textBtnSpeak.innerText = 'กำลังฟัง...';
+            };
 
-            recognition.start();
-
-            recognition.onresult = function(event) {
+            activeRecognition.onresult = function(event) {
                 const spokenWord = event.results[0][0].transcript.replace(/[。，？！,.?!]/g, '').trim();
                 const targetWord = currentLesson.words[currentWordIndex].zh;
                 
@@ -894,15 +928,18 @@
                 }
             };
 
-            recognition.onerror = function(event) {
+            activeRecognition.onerror = function(event) {
+                isRecognizing = false;
                 if(event.error === 'not-allowed') {
                     showSpeechToast('🎤', 'หาไมค์ไม่เจอ!', 'อย่าลืมกดอนุญาตให้เว็บใช้ไมโครโฟนตอนเด้งถามนะครับ');
                 } else if(event.error !== 'aborted') {
+                    // เราไม่ต้องแจ้งเตือนถ้า aborted (ผู้ใช้กดปิด หรือระบบตัดเอง)
                     showSpeechToast('👂', 'ไม่ได้ยินเสียงเลย', 'ลองพูดใกล้ๆ ไมค์หรือพูดให้ดังขึ้นอีกนิดนะ ฮึบๆ!');
                 }
             };
 
-            recognition.onend = function() {
+            activeRecognition.onend = function() {
+                isRecognizing = false;
                 indicator.classList.add('hidden');
                 
                 // คืนค่าสไตล์ปุ่มไมค์กลับเป็นปกติ (Orange)
@@ -911,6 +948,13 @@
                 btnSpeak.classList.replace('text-rose-600', 'text-orange-600');
                 textBtnSpeak.innerText = 'ฝึกพูด';
             };
+
+            try {
+                activeRecognition.start();
+            } catch (e) {
+                console.error("Speech recognition error:", e);
+                isRecognizing = false;
+            }
         };
 
         // ================= INIT APP =================
