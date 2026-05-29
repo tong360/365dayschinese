@@ -107,6 +107,18 @@
             <span id="toastMessage">น้อง A กำลังเรียนอยู่...</span>
         </div>
 
+        <!-- Speech Feedback Modal (ป๊อปอัปฝึกพูด) -->
+        <div id="speechToast" class="absolute inset-0 bg-slate-900/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm hidden transition-opacity">
+            <div class="bg-white rounded-3xl p-6 text-center shadow-2xl max-w-[80%] flex flex-col items-center">
+                <div id="speechToastIcon" class="text-6xl mb-3 drop-shadow-md">🤔</div>
+                <h3 id="speechToastTitle" class="font-black text-2xl text-slate-800 mb-2">เกือบแล้ว!</h3>
+                <p id="speechToastMessage" class="text-slate-600 text-sm font-medium mb-5 bg-slate-50 px-4 py-3 rounded-2xl border border-slate-100">AI ได้ยินว่า...</p>
+                <button onclick="closeSpeechToast()" class="w-full bg-orange-500 text-white font-bold py-3.5 rounded-[1.2rem] hover:bg-orange-600 transition shadow-lg shadow-orange-500/30">
+                    ลองพูดใหม่ 🎤
+                </button>
+            </div>
+        </div>
+
         <!-- ==================== SCREEN 1: HOME ==================== -->
         <div id="screen-home" class="screen flex-col h-full bg-slate-50 relative">
             <!-- Header -->
@@ -187,7 +199,7 @@
                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
                       <span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
                     </span>
-                    พูดเลย! 🎤
+                    กำลังฟังเสียง... 🎤
                 </div>
 
                 <!-- ขยาย max-w ให้กว้างขึ้น เพิ่มความหนาของ border และ shadow ให้ดูเป็นมิติ -->
@@ -234,7 +246,7 @@
                     <!-- ปุ่มฝึกพูด (3D Style - ให้เด่นสุด) -->
                     <button id="btnSpeak" onclick="startSpeaking()" class="flex flex-col items-center justify-center gap-1.5 bg-orange-100 border-2 border-b-[4px] border-orange-300 text-orange-600 rounded-[1.2rem] p-3 active:border-b-2 active:translate-y-[2px] transition-all shadow-sm">
                         <svg class="w-7 h-7 drop-shadow-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-                        <span class="font-bold text-[11px]">ฝึกพูด</span>
+                        <span class="font-bold text-[11px]" id="textBtnSpeak">ฝึกพูด</span>
                     </button>
                 </div>
                 
@@ -822,13 +834,32 @@
             }
         };
 
+        // ฟังก์ชันแสดงป๊อปอัปแจ้งผลการพูด
+        window.showSpeechToast = function(icon, title, message) {
+            const toast = document.getElementById('speechToast');
+            document.getElementById('speechToastIcon').innerText = icon;
+            document.getElementById('speechToastTitle').innerText = title;
+            document.getElementById('speechToastMessage').innerText = message;
+            
+            toast.classList.remove('hidden');
+            toast.classList.add('flex', 'animate-fade-in');
+        };
+
+        window.closeSpeechToast = function() {
+            document.getElementById('speechToast').classList.add('hidden');
+            document.getElementById('speechToast').classList.remove('flex', 'animate-fade-in');
+        }
+
         window.startSpeaking = function() {
             if (isCurrentWordPassed || currentMode !== 'lesson') return;
 
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
-                alert("บราวเซอร์ไม่รองรับ AI ไมโครโฟน\n(ระบบจะข้ามให้ผ่านเพื่อการทดสอบแทน)");
-                handleCorrectAnswer(true);
+                showSpeechToast('😔', 'เบราว์เซอร์ไม่รองรับ', 'อุปกรณ์นี้ไม่รองรับระบบเสียง (ระบบจะข้ามคำนี้ให้เพื่อทำการทดสอบ)');
+                setTimeout(() => {
+                    closeSpeechToast();
+                    handleCorrectAnswer(true);
+                }, 3000);
                 return;
             }
 
@@ -838,7 +869,16 @@
             recognition.maxAlternatives = 1;
 
             const indicator = document.getElementById('listeningIndicator');
+            const btnSpeak = document.getElementById('btnSpeak');
+            const textBtnSpeak = document.getElementById('textBtnSpeak');
+            
             indicator.classList.remove('hidden');
+            
+            // เปลี่ยนสไตล์ปุ่มไมค์ระหว่างฟังเสียง ให้เป็นสีแดง (Rose) เพื่อให้เด็กรู้ตัว
+            btnSpeak.classList.replace('bg-orange-100', 'bg-rose-100');
+            btnSpeak.classList.replace('border-orange-300', 'border-rose-400');
+            btnSpeak.classList.replace('text-orange-600', 'text-rose-600');
+            textBtnSpeak.innerText = 'กำลังฟัง...';
 
             recognition.start();
 
@@ -849,20 +889,27 @@
                 if (spokenWord.includes(targetWord)) {
                     handleCorrectAnswer();
                 } else {
-                    alert(`AI ได้ยินว่า: "${spokenWord}"\nลองพูดให้ชัดขึ้นอีกนิดนะ ฮึบๆ! 💪`);
+                    // เรียกใช้ Modal แจ้งเตือนแบบน่ารัก แทน window.alert()
+                    showSpeechToast('🤔', 'เกือบแล้ว!', `AI ได้ยินคำว่า:\n"${spokenWord}"`);
                 }
             };
 
             recognition.onerror = function(event) {
                 if(event.error === 'not-allowed') {
-                    alert('อย่าลืมกดอนุญาตให้เว็บใช้ไมโครโฟนนะครับ 🎤');
+                    showSpeechToast('🎤', 'หาไมค์ไม่เจอ!', 'อย่าลืมกดอนุญาตให้เว็บใช้ไมโครโฟนตอนเด้งถามนะครับ');
                 } else if(event.error !== 'aborted') {
-                    alert('ไม่ได้ยินเสียง ลองพูดใกล้ๆ ไมค์อีกครั้งนะ!');
+                    showSpeechToast('👂', 'ไม่ได้ยินเสียงเลย', 'ลองพูดใกล้ๆ ไมค์หรือพูดให้ดังขึ้นอีกนิดนะ ฮึบๆ!');
                 }
             };
 
             recognition.onend = function() {
                 indicator.classList.add('hidden');
+                
+                // คืนค่าสไตล์ปุ่มไมค์กลับเป็นปกติ (Orange)
+                btnSpeak.classList.replace('bg-rose-100', 'bg-orange-100');
+                btnSpeak.classList.replace('border-rose-400', 'border-orange-300');
+                btnSpeak.classList.replace('text-rose-600', 'text-orange-600');
+                textBtnSpeak.innerText = 'ฝึกพูด';
             };
         };
 
